@@ -1,0 +1,103 @@
+# Environment & secrets
+# env.sh
+# .env
+# .env.*
+# experiment.yaml
+# models.yaml
+
+# I/O data
+input/
+output/
+chat_history/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+# .cursor/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Analysis & schedule (local only)
+# /analysis
+# /schedule
+
+paper/
+paper-bench/
+paper-context/
+paper-frontend/
+
+# run_multi_model.sh
+
+input/
+output/
+# 快捷指令.md
+dataset/
+
+# Multi-version experiment artifacts
+.worktrees/
+.experiment_backup/
+# run_multi_version.sh
+# scripts/
+# run_multi_model.sh
+
+
+experiments/
+
+*.log
+
+# Temporary benchmark output
+.tmp/
+
+.cursor/
+
+paper/
+
+input/
+
+output/
+
+dataset/
+
+experiments/
+.cache/
+
+analysis
+
+schedule/
+
+
+server_migrate
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.vscode/
+.idea/
+.cursor/
+.gitignore
+.gitignore
+
+
+*.zip
+
+scripts
+
+FILES_MAP

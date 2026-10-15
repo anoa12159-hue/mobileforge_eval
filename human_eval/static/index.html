@@ -1,0 +1,2345 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>人工 - VLM 一致性评估</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Microsoft YaHei", sans-serif;
+    color: #111;
+    background: #f5f5f7;
+  }
+  body { display: flex; flex-direction: column; }
+  header {
+    flex: 0 0 auto;
+    background: #1f2937;
+    color: #fff;
+    padding: 10px 20px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    flex-wrap: wrap;
+  }
+  header .title { font-size: 16px; font-weight: 600; margin-right: 16px; }
+  header label { font-size: 13px; color: #d1d5db; margin-right: 4px; }
+  header select, header button {
+    background: #374151; color: #fff; border: 1px solid #4b5563;
+    padding: 6px 10px; font-size: 13px; border-radius: 4px;
+    cursor: pointer; outline: none;
+  }
+  header select:disabled, header button:disabled { opacity: 0.5; cursor: not-allowed; }
+  header button.primary { background: #3b82f6; border-color: #3b82f6; }
+  header button.primary:hover:not(:disabled) { background: #2563eb; }
+  header button.danger { background: #dc2626; border-color: #dc2626; }
+  header button.success { background: #16a34a; border-color: #16a34a; font-weight: 600; }
+  header button.success:hover:not(:disabled) { background: #15803d; }
+  header .status {
+    margin-left: auto;
+    font-size: 12px; color: #d1d5db;
+    display: flex; align-items: center; gap: 14px;
+  }
+  header .status .dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: #6b7280; margin-right: 4px;
+  }
+  header .status .dot.on { background: #22c55e; box-shadow: 0 0 4px #22c55e; }
+  header .save-status { color: #fbbf24; font-weight: 600; }
+  header .save-status.saved { color: #86efac; font-weight: 400; }
+  header .save-status.error { color: #fca5a5; }
+
+  main {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: 280px minmax(420px, 1fr) 430px;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  /* Sidebar: case list */
+  .sidebar {
+    background: #fff; border-right: 1px solid #e5e7eb;
+    overflow-y: auto; padding: 0;
+    display: flex; flex-direction: column;
+  }
+  .sidebar .filter-box {
+    padding: 10px 12px; border-bottom: 1px solid #e5e7eb; background: #f9fafb;
+    position: sticky; top: 0; z-index: 1;
+  }
+  .sidebar .filter-box input {
+    width: 100%; padding: 6px 8px; font-size: 12px;
+    border: 1px solid #d1d5db; border-radius: 4px; outline: none;
+  }
+  .sidebar .filter-box .filters {
+    display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap;
+  }
+  .sidebar .filter-box .filters button {
+    flex: 1 0 auto;
+    background: #fff; border: 1px solid #d1d5db; color: #374151;
+    padding: 4px 8px; font-size: 11px; border-radius: 4px; cursor: pointer;
+  }
+  .sidebar .filter-box .filters button.active {
+    background: #1f2937; color: #fff; border-color: #1f2937;
+  }
+  .sidebar .summary {
+    padding: 8px 12px; font-size: 11px; color: #6b7280;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .sidebar .summary span { white-space: nowrap; }
+  .group-header {
+    padding: 6px 12px;
+    background: #f3f4f6;
+    border-top: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; color: #374151;
+    user-select: none;
+    position: sticky; top: 0; z-index: 1;
+  }
+  .group-header:hover { background: #e5e7eb; }
+  .group-header .arrow {
+    width: 12px; display: inline-block; text-align: center;
+    color: #6b7280; transition: transform 0.15s;
+  }
+  .group-header.collapsed .arrow { transform: rotate(-90deg); }
+  .group-header .group-name { flex: 1; }
+  .group-header .group-stats {
+    color: #6b7280; font-size: 11px; font-weight: 400;
+    background: #fff; padding: 1px 6px; border-radius: 8px;
+    border: 1px solid #d1d5db;
+  }
+  .group-header .group-pending {
+    color: #92400e; font-size: 11px; font-weight: 600;
+    background: #fef3c7; padding: 1px 6px; border-radius: 8px;
+  }
+  .group-header .group-disagree {
+    color: #991b1b; font-size: 11px; font-weight: 600;
+    background: #fee2e2; padding: 1px 6px; border-radius: 8px;
+  }
+  .group-empty {
+    padding: 8px 24px; color: #9ca3af; font-size: 11px;
+    font-style: italic;
+  }
+  .case-item {
+    padding: 8px 12px 8px 24px; border-bottom: 1px solid #f1f5f9;
+    cursor: pointer;
+    display: flex; align-items: flex-start; gap: 8px;
+    font-size: 12px;
+    transition: background 0.1s;
+  }
+  .case-item:hover { background: #f1f5f9; }
+  .case-item.active { background: #dbeafe; }
+  .case-item .badge {
+    flex: 0 0 auto;
+    width: 18px; height: 18px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+    color: #fff;
+    margin-top: 1px;
+  }
+  .badge.pass { background: #16a34a; }
+  .badge.fail { background: #dc2626; }
+  .badge.pending { background: #f59e0b; }
+  .case-item .text { flex: 1 1 auto; min-width: 0; }
+  .case-item .test-id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; color: #1f2937;
+    word-break: break-all; line-height: 1.3;
+  }
+  .case-item .meta {
+    font-size: 10px; color: #9ca3af; margin-top: 2px;
+    display: flex; gap: 6px; align-items: center;
+  }
+  .case-item .meta .vlm-tag {
+    background: #e5e7eb; color: #374151;
+    padding: 1px 4px; border-radius: 3px;
+  }
+  .case-item .meta .vlm-tag.pass { background: #dcfce7; color: #166534; }
+  .case-item .meta .vlm-tag.fail { background: #fee2e2; color: #991b1b; }
+  .case-item .meta .h-tag {
+    background: #fef3c7; color: #92400e;
+    padding: 1px 4px; border-radius: 3px;
+  }
+  .case-item .meta .h-tag.pass { background: #dbeafe; color: #1e40af; }
+  .case-item .meta .h-tag.fail { background: #fce7f3; color: #9d174d; }
+
+  /* Center: detail + screenshots */
+  .detail {
+    background: #f5f5f7;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex; flex-direction: column; gap: 14px;
+    min-width: 0;
+  }
+  .detail .empty {
+    color: #9ca3af; text-align: center; padding: 60px 20px;
+  }
+  .info-card {
+    background: #fff; border-radius: 8px; padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .info-row-2col {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 14px;
+    align-items: stretch;
+  }
+  .info-row-2col .info-card { margin: 0; }
+  .info-card h3 {
+    margin: 0 0 8px; font-size: 13px; color: #6b7280;
+    text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+  }
+  .info-card .test-id-big {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 14px; color: #111; word-break: break-all; line-height: 1.4;
+  }
+  .info-card .info-row {
+    display: flex; gap: 10px; margin-top: 6px;
+    font-size: 12px; color: #4b5563;
+  }
+  .info-card .info-row .k { color: #9ca3af; min-width: 90px; }
+  .info-card .info-row .v {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #111; word-break: break-all;
+  }
+  .info-card .info-row .v.warn { color: #b45309; }
+  .info-card.action-card {
+    background: linear-gradient(180deg, #fffbeb 0%, #fff 100%);
+    border-left: 3px solid #f59e0b;
+  }
+  .info-card.action-card h3 { color: #92400e; }
+  .info-card.action-card .desc {
+    font-size: 14px; color: #1f2937; line-height: 1.5;
+    padding: 8px 10px; background: #fff; border-radius: 4px;
+    border: 1px solid #fde68a;
+    margin-top: 4px;
+  }
+  .info-card.action-card .desc:empty::before {
+    content: "(无 action 描述 — test_cases.reviewed.json 中未找到)";
+    color: #9ca3af; font-style: italic; font-size: 12px;
+  }
+  .info-card.action-card .pill {
+    display: inline-block; padding: 1px 6px; margin-right: 4px; margin-top: 4px;
+    background: #e5e7eb; color: #1f2937;
+    border-radius: 3px; font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .info-card.action-card .pill.text { background: #fef3c7; color: #92400e; }
+  .info-card.action-card .pill.dom { background: #e0e7ff; color: #3730a3; }
+  .info-card.action-card .pill-row { margin-top: 4px; }
+  .info-card.action-card .from-to {
+    font-size: 12px; color: #4b5563; margin-top: 6px;
+    display: flex; align-items: center; gap: 6px;
+    flex-wrap: wrap;
+  }
+  .info-card.action-card .from-to code {
+    background: #f3f4f6; padding: 1px 5px; border-radius: 3px;
+    font-size: 11px;
+  }
+  .info-card.action-card .from-to .arrow { color: #f59e0b; font-weight: 700; }
+  .verdict-card { background: #fff; border-radius: 8px; padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .verdict-card .vlm-line {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; margin-bottom: 12px; color: #374151;
+  }
+  .verdict-card .vlm-tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 12px; font-weight: 600;
+  }
+  .vlm-tag.pass { background: #dcfce7; color: #166534; }
+  .vlm-tag.fail { background: #fee2e2; color: #991b1b; }
+  .verdict-card .h-line { font-size: 13px; color: #374151; margin-bottom: 6px; }
+  .verdict-card .verdict-buttons {
+    display: flex; gap: 8px; margin-top: 8px;
+  }
+  .verdict-card .verdict-buttons button {
+    flex: 1; padding: 8px 12px;
+    border: 2px solid #e5e7eb; background: #fff; color: #4b5563;
+    border-radius: 6px; cursor: pointer;
+    font-size: 13px; font-weight: 500;
+    transition: all 0.1s;
+  }
+  .verdict-card .verdict-buttons button:hover { background: #f9fafb; }
+  .verdict-card .verdict-buttons button.pass.selected {
+    background: #16a34a; border-color: #16a34a; color: #fff;
+  }
+  .verdict-card .verdict-buttons button.fail.selected {
+    background: #dc2626; border-color: #dc2626; color: #fff;
+  }
+  .verdict-card .verdict-buttons button.clear { flex: 0 0 auto; min-width: 60px; }
+  .verdict-card .note-area {
+    margin-top: 10px;
+  }
+  .verdict-card .note-area textarea {
+    width: 100%; padding: 6px 8px; font-size: 12px;
+    border: 1px solid #d1d5db; border-radius: 4px;
+    min-height: 50px; resize: vertical; outline: none;
+    font-family: inherit;
+  }
+
+  .screenshots {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .screenshots.single {
+    grid-template-columns: minmax(0, 320px);
+    justify-content: center;
+  }
+  .screenshot-box {
+    background: #fff; border-radius: 8px; padding: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    display: flex; flex-direction: column;
+  }
+  .screenshot-box .label {
+    font-size: 11px; color: #6b7280; text-transform: uppercase;
+    letter-spacing: 0.05em; font-weight: 600;
+    margin-bottom: 6px; padding: 0 4px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .screenshot-box .label .label-tag {
+    font-size: 10px; padding: 1px 5px; border-radius: 3px;
+    background: #e5e7eb; color: #374151;
+  }
+  .screenshot-box img {
+    width: 100%; height: auto; max-height: 600px; object-fit: contain;
+    border-radius: 4px; background: #000;
+    cursor: zoom-in;
+  }
+
+  /* Right: app preview iframe */
+  .preview-pane {
+    background: #1f2937;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .preview-pane .toolbar {
+    flex: 0 0 auto;
+    background: #111827;
+    color: #d1d5db;
+    padding: 8px 12px;
+    display: flex; gap: 6px; align-items: center;
+    font-size: 12px;
+    border-bottom: 1px solid #374151;
+  }
+  .preview-pane .toolbar button {
+    background: #374151; color: #fff; border: 1px solid #4b5563;
+    padding: 4px 8px; font-size: 11px; border-radius: 3px; cursor: pointer;
+  }
+  .preview-pane .toolbar button:hover { background: #4b5563; }
+  .preview-pane .toolbar input {
+    flex: 1 1 auto;
+    background: #374151; color: #fff; border: 1px solid #4b5563;
+    padding: 4px 8px; font-size: 11px; border-radius: 3px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    outline: none;
+  }
+  .preview-pane .frame-area {
+    flex: 1 1 auto;
+    background: #0f172a;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 14px;
+    overflow: auto;
+  }
+  .preview-pane iframe {
+    width: 390px; height: 844px;
+    border: 1px solid #374151;
+    border-radius: 16px;
+    background: #fff;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    flex: 0 0 auto;
+  }
+  .preview-pane .frame-empty {
+    color: #9ca3af; text-align: center; padding: 60px 20px;
+    font-size: 13px; line-height: 1.6;
+  }
+  .preview-pane .frame-empty code {
+    background: #374151; color: #f59e0b; padding: 2px 6px;
+    border-radius: 3px; font-size: 12px;
+  }
+  .preview-pane .frame-empty .open-link {
+    display: inline-block; margin-top: 10px;
+    background: #3b82f6; color: #fff; padding: 6px 14px;
+    border-radius: 4px; text-decoration: none; font-size: 12px;
+  }
+  .preview-pane .frame-empty .open-link:hover { background: #2563eb; }
+
+  /* Lightbox */
+  .lightbox {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; cursor: zoom-out;
+  }
+  .lightbox img {
+    max-width: 95vw; max-height: 95vh; object-fit: contain;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+
+  /* ----- save toast ----- */
+  .save-toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 2000;
+    background: #1f2937;
+    color: #f9fafb;
+    padding: 14px 18px;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    border-left: 4px solid #10b981;
+    font-size: 13px;
+    line-height: 1.55;
+    max-width: 460px;
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity .25s ease, transform .25s ease;
+  }
+  .save-toast.show { opacity: 1; transform: translateY(0); }
+  .save-toast b { color: #fff; }
+  .save-toast .paths {
+    display: block;
+    margin-top: 6px;
+    font-size: 11.5px;
+    color: #d1d5db;
+    word-break: break-all;
+  }
+  .save-toast code {
+    background: rgba(255,255,255,0.08);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 11px;
+    color: #fef3c7;
+  }
+
+  /* ===== Mode tabs in header ===== */
+  header .mode-tabs {
+    display: flex; gap: 0; margin-right: 12px;
+    background: #111827; border-radius: 6px; padding: 2px;
+    border: 1px solid #374151;
+  }
+  header .mode-tabs button {
+    background: transparent; color: #9ca3af; border: 0;
+    padding: 5px 12px; font-size: 12px; border-radius: 4px;
+    cursor: pointer; font-weight: 500;
+  }
+  header .mode-tabs button.active {
+    background: #3b82f6; color: #fff;
+  }
+
+  /* show-when-mode helpers */
+  body.mode-click .visual-only { display: none !important; }
+  body.mode-visual .click-only { display: none !important; }
+
+  /* ===== Visual judge detail panel ===== */
+  .vj-pair {
+    background: #fff; border-radius: 8px; padding: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .vj-pair .pair-head {
+    display: flex; align-items: center; gap: 10px;
+    padding-bottom: 6px; border-bottom: 1px solid #f1f5f9;
+  }
+  .vj-pair .pair-title {
+    font-size: 13px; font-weight: 600; color: #1f2937;
+  }
+  .vj-pair .pair-tag {
+    font-size: 10px; padding: 1px 6px; border-radius: 3px;
+    background: #e5e7eb; color: #374151; text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .vj-pair .pair-tag.before { background: #fef3c7; color: #92400e; }
+  .vj-pair .pair-tag.after  { background: #dbeafe; color: #1e40af; }
+  .vj-pair .pair-tag.single { background: #e0e7ff; color: #3730a3; }
+  .vj-pair .pair-tag.weight {
+    background: #1f2937; color: #fff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+  }
+  .vj-pair .pair-actions {
+    margin-left: auto;
+    display: flex; gap: 6px;
+  }
+  .vj-pair .pair-actions button {
+    background: #f3f4f6; color: #374151; border: 1px solid #d1d5db;
+    padding: 3px 9px; font-size: 11px; border-radius: 4px;
+    cursor: pointer; white-space: nowrap;
+  }
+  .vj-pair .pair-actions button:hover { background: #e5e7eb; }
+  .vj-pair .pair-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .vj-pair .pair-actions button.copy-prev {
+    background: #ecfeff; border-color: #67e8f9; color: #155e75;
+  }
+  .vj-pair .pair-actions button.copy-prev:hover:not(:disabled) {
+    background: #cffafe;
+  }
+
+  .vj-images {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .vj-img-box {
+    display: flex; flex-direction: column; gap: 4px;
+    min-width: 0;
+  }
+  .vj-img-box .lbl {
+    font-size: 10px; color: #6b7280; text-transform: uppercase;
+    letter-spacing: 0.05em; font-weight: 600;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .vj-img-box .lbl .src {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    text-transform: none; font-weight: 400; color: #9ca3af;
+    font-size: 10px; word-break: break-all;
+  }
+  .vj-img-box .lbl.design { color: #92400e; }
+  .vj-img-box .lbl.impl { color: #1e40af; }
+  .vj-img-box img {
+    width: 100%; height: auto; max-height: 460px; object-fit: contain;
+    border-radius: 4px; background: #000;
+    cursor: zoom-in; border: 1px solid #e5e7eb;
+  }
+  .vj-img-box .img-missing {
+    background: #f9fafb; color: #9ca3af;
+    border: 1px dashed #d1d5db; border-radius: 4px;
+    padding: 30px 10px; text-align: center; font-size: 12px;
+    font-style: italic;
+  }
+
+  .vj-dims {
+    display: flex; flex-direction: column; gap: 6px;
+    background: #f9fafb; border-radius: 6px; padding: 10px;
+  }
+  .vj-dim-row {
+    display: grid;
+    grid-template-columns: 130px 1fr 90px;
+    align-items: center;
+    gap: 10px;
+  }
+  .vj-dim-row .name {
+    font-size: 12px; font-weight: 600; color: #374151;
+    display: flex; align-items: baseline; gap: 6px;
+  }
+  .vj-dim-row .name .w {
+    font-size: 10px; color: #9ca3af; font-weight: 400;
+  }
+  .vj-dim-row .scale {
+    display: flex; gap: 4px;
+  }
+  .vj-dim-row .scale button {
+    flex: 1; min-width: 0;
+    background: #fff; border: 1px solid #d1d5db; color: #4b5563;
+    padding: 4px 0; font-size: 13px; border-radius: 4px;
+    cursor: pointer; font-weight: 600;
+    transition: all 0.08s;
+  }
+  .vj-dim-row .scale button:hover { background: #f3f4f6; }
+  .vj-dim-row .scale button.selected {
+    background: #3b82f6; border-color: #3b82f6; color: #fff;
+  }
+  .vj-dim-row .scale button.model-suggest {
+    border-color: #fbbf24; border-style: dashed;
+  }
+  .vj-dim-row .scale button.selected.model-suggest {
+    border-style: solid;
+  }
+  .vj-dim-row .model-pill {
+    font-size: 10px; color: #92400e;
+    background: #fef3c7; padding: 1px 6px; border-radius: 3px;
+    display: inline-block; text-align: center; white-space: nowrap;
+    border: 1px solid #fde68a;
+  }
+  .vj-dim-row .model-pill.empty {
+    background: #f3f4f6; color: #9ca3af; border-color: #e5e7eb;
+  }
+  .vj-dim-row .model-pill.match { background: #dcfce7; color: #166534; border-color: #86efac; }
+  .vj-dim-row .model-pill.diff { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+
+  .vj-issues {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .vj-issues .lbl {
+    font-size: 11px; color: #6b7280; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    display: flex; gap: 8px; align-items: baseline;
+  }
+  .vj-issues .lbl .model-issues {
+    text-transform: none; font-weight: 400; color: #92400e;
+    background: #fef3c7; padding: 1px 6px; border-radius: 3px;
+    font-size: 11px;
+  }
+  .vj-issues textarea {
+    width: 100%; padding: 6px 8px; font-size: 12px;
+    border: 1px solid #d1d5db; border-radius: 4px;
+    min-height: 36px; resize: vertical; outline: none;
+    font-family: inherit;
+  }
+
+  .vj-summary-card {
+    background: #fff; border-radius: 8px; padding: 12px 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    font-size: 12px; color: #374151;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px 14px;
+  }
+  .vj-summary-card .stat {
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .vj-summary-card .stat .k {
+    font-size: 10px; color: #9ca3af; text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .vj-summary-card .stat .v {
+    font-size: 14px; font-weight: 600; color: #111;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .vj-summary-card .stat .v.good { color: #166534; }
+  .vj-summary-card .stat .v.bad { color: #991b1b; }
+  .vj-summary-card .stat .v.warn { color: #92400e; }
+
+  /* Visual sidebar case meta differs from click mode */
+  .case-item .meta .vj-tag {
+    background: #e5e7eb; color: #374151;
+    padding: 1px 5px; border-radius: 3px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .case-item .meta .vj-tag.h { background: #dbeafe; color: #1e40af; }
+  .case-item .meta .vj-tag.m { background: #fef3c7; color: #92400e; }
+  .case-item .meta .vj-tag.empty { background: #f3f4f6; color: #9ca3af; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title">人工 - VLM 一致性评估</div>
+
+  <div class="mode-tabs" id="mode-tabs">
+    <button data-mode="click" class="active" title="审计 vlm_click_model 的导航判定">
+      Click 一致性
+    </button>
+    <button data-mode="visual" title="审计 visual_judge_model 的截图打分">
+      Visual 一致性
+    </button>
+  </div>
+
+  <label for="model-filter" title="按生成代码用的 LLM 过滤 run">Model:</label>
+  <select id="model-filter" style="min-width: 140px;">
+    <option value="">(所有模型)</option>
+  </select>
+
+  <label for="run-select">Run:</label>
+  <select id="run-select" style="min-width: 240px;"></select>
+
+  <label for="vlm-select" title="评估对象: vlm_click_model">
+    <span class="click-only">VLM(click):</span>
+    <span class="visual-only">Click 截图来源:</span>
+  </label>
+  <select id="vlm-select" style="min-width: 140px;"></select>
+
+  <label for="judge-select" class="visual-only" title="评估对象: visual_judge_model">
+    Visual Judge:
+  </label>
+  <select id="judge-select" class="visual-only" style="min-width: 140px;"></select>
+
+  <button id="launch-btn" class="primary">▶ 启动 App</button>
+  <button id="stop-btn" class="danger" disabled>■ 停止</button>
+  <button id="save-btn" class="success" disabled>💾 保存</button>
+
+  <div class="status">
+    <span id="preview-status">
+      <span class="dot"></span><span id="preview-status-text">未启动</span>
+    </span>
+    <span id="save-status" class="save-status saved">已同步</span>
+    <span id="experiment-name"></span>
+  </div>
+</header>
+
+<main>
+  <aside class="sidebar">
+    <div class="filter-box">
+      <input id="filter-input" placeholder="过滤 test_id ..." />
+      <div class="filters click-only">
+        <button data-filter="all" class="active">全部</button>
+        <button data-filter="pending">待评 (?)</button>
+        <button data-filter="disagree">分歧</button>
+        <button data-filter="vlm_pass">VLM ✓</button>
+        <button data-filter="vlm_fail">VLM ✗</button>
+      </div>
+      <div class="filters visual-only">
+        <button data-vfilter="all" class="active">全部</button>
+        <button data-vfilter="pending">未评</button>
+        <button data-vfilter="judged">已评</button>
+        <button data-vfilter="disagree">分歧 (≥2)</button>
+      </div>
+    </div>
+    <div class="summary" id="summary">
+      <span>未加载</span>
+    </div>
+    <div id="case-list"></div>
+  </aside>
+
+  <section class="detail" id="detail-panel">
+    <div class="empty">从左侧选择一个测试用例</div>
+  </section>
+
+  <section class="preview-pane">
+    <div class="toolbar">
+      <button id="reload-frame-btn" disabled>↻ 刷新</button>
+      <button id="goto-route-btn" disabled>→ 跳转期望路由</button>
+      <input id="frame-url" readonly placeholder="(尚未启动 App 预览)" />
+    </div>
+    <div class="frame-area" id="frame-area">
+      <div class="frame-empty">
+        在顶部选择 Run 后点击 <b>▶ 启动 App</b><br />
+        即可在此处预览实际运行效果。
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+//=========================================================================
+// 全局状态
+//=========================================================================
+const MODE_CLICK = "click";
+const MODE_VISUAL = "visual";
+const VISUAL_DIMS = ["layout", "style", "content", "consistency"];
+const VISUAL_DIM_WEIGHTS = { layout: 0.30, style: 0.25, content: 0.25, consistency: 0.20 };
+const VISUAL_DIM_LABELS = {
+  layout: "Layout 布局",
+  style: "Style 风格",
+  content: "Content 内容",
+  consistency: "Consistency 一致",
+};
+
+const state = {
+  mode: localStorage.getItem("he_mode") === MODE_VISUAL ? MODE_VISUAL : MODE_CLICK,
+  runs: [],                 // 所有可用 run（未过滤）
+  modelFilter: localStorage.getItem("he_model_filter") || "",  // "" = 不过滤
+  selectedRun: null,        // 当前选中的 run_id
+  selectedVlm: null,        // 当前选中的 vlm_click_model (click_tag)
+  selectedJudge: null,      // 当前选中的 visual_judge_model (judge_tag) — visual mode only
+  cases: [],                // 当前 (run, vlm) 的 click cases
+  visualCases: [],          // 当前 (run, click, judge) 的 visual cases
+  visualMeta: null,         // {judge_summary: {...}} returned by /api/visual_cases
+  selectedTestId: null,
+  preview: { run_id: null, port: null },
+  filter: { kw: "", mode: "all" },
+  visualFilter: { kw: "", mode: "all" },
+  dirty: false,
+  loading: false,
+  collapsedGroups: new Set(),
+  visualHumanExists: false,
+};
+
+// 测试类型分组定义（决定显示顺序和中文名）
+const TYPE_GROUPS = [
+  { key: "page_exists", label: "页面存在 (page_exists)" },
+  { key: "tab_navigation", label: "Tab 导航 (tab_navigation)" },
+  { key: "parent_child_navigation", label: "父子页导航 (parent_child_navigation)" },
+];
+
+const $ = (id) => document.getElementById(id);
+
+//=========================================================================
+// API 调用
+//=========================================================================
+async function api(path, init = {}) {
+  const r = await fetch(path, init);
+  if (!r.ok) {
+    let msg = r.statusText;
+    try { msg = (await r.json()).error || msg; } catch (e) { /* ignore */ }
+    throw new Error(`${r.status}: ${msg}`);
+  }
+  return r.json();
+}
+
+async function loadRuns() {
+  const data = await api("/api/runs");
+  state.runs = data.runs;
+  populateModelFilter();
+  refreshRunSelect();
+  refreshVlmSelect();
+  refreshJudgeSelect();
+}
+
+function filteredRuns() {
+  if (!state.modelFilter) return state.runs;
+  return state.runs.filter((r) => r.model === state.modelFilter);
+}
+
+function populateModelFilter() {
+  const sel = $("model-filter");
+  // Preserve any existing value on the element so user-driven changes during
+  // re-population don't get clobbered (in practice we only call this once at
+  // load — but it's cheap to be defensive).
+  const wantedValue = state.modelFilter;
+  // Build sorted unique model list with run counts.
+  const counts = new Map();
+  for (const r of state.runs) {
+    if (!r.model) continue;
+    counts.set(r.model, (counts.get(r.model) || 0) + 1);
+  }
+  const models = [...counts.keys()].sort();
+  sel.innerHTML = `<option value="">(所有模型 · ${state.runs.length})</option>`;
+  for (const m of models) {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = `${m}  (${counts.get(m)})`;
+    sel.appendChild(opt);
+  }
+  // Re-apply persisted selection if it still exists in the model list;
+  // otherwise drop the filter so we don't show an empty run-select.
+  if (wantedValue && counts.has(wantedValue)) {
+    sel.value = wantedValue;
+  } else {
+    sel.value = "";
+    state.modelFilter = "";
+    localStorage.setItem("he_model_filter", "");
+  }
+}
+
+function refreshRunSelect() {
+  const sel = $("run-select");
+  const runs = filteredRuns();
+  sel.innerHTML = "";
+  if (runs.length === 0) {
+    sel.innerHTML = state.modelFilter
+      ? `<option value="">(模型 ${state.modelFilter} 下无可用 run)</option>`
+      : '<option value="">(无可用 run)</option>';
+    state.selectedRun = null;
+    return;
+  }
+  // Keep the original "app / model / method" labelling regardless of whether
+  // a model filter is active — only the *set* of options shrinks.
+  for (const r of runs) {
+    const opt = document.createElement("option");
+    opt.value = r.run_id;
+    opt.textContent = `${r.app}  /  ${r.model}  /  ${r.method}`;
+    if (!r.has_dist) opt.textContent += "  (no dist)";
+    sel.appendChild(opt);
+  }
+  // Preserve the previously-selected run when it survives the filter change;
+  // otherwise pick the first one in the filtered list.
+  const survives = runs.find((r) => r.run_id === state.selectedRun);
+  state.selectedRun = survives ? survives.run_id : runs[0].run_id;
+  sel.value = state.selectedRun;
+}
+
+function refreshVlmSelect() {
+  const run = state.runs.find((r) => r.run_id === state.selectedRun);
+  const vlmSel = $("vlm-select");
+  vlmSel.innerHTML = "";
+  // In visual mode the click selector represents *which click_tag's
+  // navigation screenshots* to score — we list any click_tag that has
+  // either a nav report (vlms) or a visual report (judges_by_click).
+  let options = [];
+  if (run) {
+    if (state.mode === MODE_VISUAL) {
+      const vSet = new Set(run.vlms || []);
+      Object.keys(run.judges_by_click || {}).forEach((k) => vSet.add(k));
+      options = [...vSet].sort();
+    } else {
+      options = run.vlms || [];
+    }
+  }
+  if (!options.length) {
+    vlmSel.innerHTML = '<option value="">(无)</option>';
+    state.selectedVlm = null;
+    return;
+  }
+  for (const v of options) {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    vlmSel.appendChild(opt);
+  }
+  state.selectedVlm = vlmSel.value;
+}
+
+function refreshJudgeSelect() {
+  const run = state.runs.find((r) => r.run_id === state.selectedRun);
+  const sel = $("judge-select");
+  sel.innerHTML = "";
+  const judges = run && run.judges_by_click
+    ? (run.judges_by_click[state.selectedVlm] || [])
+    : [];
+  if (!judges.length) {
+    sel.innerHTML = '<option value="">(无 visual_report)</option>';
+    state.selectedJudge = null;
+    return;
+  }
+  for (const j of judges) {
+    const opt = document.createElement("option");
+    opt.value = j;
+    opt.textContent = j;
+    sel.appendChild(opt);
+  }
+  state.selectedJudge = sel.value;
+}
+
+function applyMode() {
+  document.body.classList.toggle("mode-click", state.mode === MODE_CLICK);
+  document.body.classList.toggle("mode-visual", state.mode === MODE_VISUAL);
+  document.querySelectorAll("#mode-tabs button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.mode === state.mode);
+  });
+}
+
+async function loadCases() {
+  // Dispatcher: route to click or visual loader based on current mode.
+  if (state.mode === MODE_VISUAL) return loadVisualCases();
+  return loadClickCases();
+}
+
+async function loadClickCases() {
+  if (!state.selectedRun || !state.selectedVlm) {
+    state.cases = [];
+    state.selectedTestId = null;
+    renderCaseList();
+    renderDetail();
+    return;
+  }
+  state.loading = true;
+  setSummary("加载中 ...");
+  try {
+    const data = await api(
+      `/api/cases?run_id=${encodeURIComponent(state.selectedRun)}` +
+      `&vlm=${encodeURIComponent(state.selectedVlm)}`
+    );
+    state.cases = data.cases || [];
+    state.dirty = false;
+    if (data.human_eval_exists === false) {
+      setSaveStatus("unsaved-initial");
+    } else {
+      setSaveStatus("saved");
+    }
+    state.selectedTestId = state.cases.length ? state.cases[0].test_id : null;
+  } catch (e) {
+    alert("加载失败: " + e.message);
+    state.cases = [];
+    state.selectedTestId = null;
+  } finally {
+    state.loading = false;
+  }
+  renderCaseList();
+  renderDetail();
+}
+
+async function loadVisualCases() {
+  if (!state.selectedRun || !state.selectedVlm || !state.selectedJudge) {
+    state.visualCases = [];
+    state.visualMeta = null;
+    state.selectedTestId = null;
+    renderCaseList();
+    renderDetail();
+    return;
+  }
+  state.loading = true;
+  setSummary("加载中 ...");
+  try {
+    const data = await api(
+      `/api/visual_cases?run_id=${encodeURIComponent(state.selectedRun)}` +
+      `&judge=${encodeURIComponent(state.selectedJudge)}` +
+      `&click=${encodeURIComponent(state.selectedVlm)}`
+    );
+    state.visualCases = data.cases || [];
+    state.visualMeta = {
+      judge_summary: data.judge_summary || null,
+      human_eval_file: data.human_eval_file,
+    };
+    state.visualHumanExists = !!data.human_eval_exists;
+    state.dirty = false;
+    if (!state.visualHumanExists) {
+      setSaveStatus("unsaved-initial");
+    } else {
+      setSaveStatus("saved");
+    }
+    state.selectedTestId = state.visualCases.length
+      ? state.visualCases[0].test_id : null;
+  } catch (e) {
+    alert("加载失败: " + e.message);
+    state.visualCases = [];
+    state.visualMeta = null;
+    state.selectedTestId = null;
+  } finally {
+    state.loading = false;
+  }
+  renderCaseList();
+  renderDetail();
+}
+
+async function launchPreview() {
+  if (!state.selectedRun) return;
+  console.log("[human_eval] launchPreview for", state.selectedRun);
+  $("launch-btn").disabled = true;
+  setPreviewStatus(false, "启动中 ...");
+  try {
+    const data = await api(
+      `/api/launch?run_id=${encodeURIComponent(state.selectedRun)}`,
+      { method: "POST" }
+    );
+    console.log("[human_eval] launch API returned:", data);
+    state.preview.run_id = data.run_id;
+    state.preview.port = data.port;
+    setPreviewStatus(true, `${data.run_id} :${data.port}`);
+    $("stop-btn").disabled = false;
+    setIframe();
+  } catch (e) {
+    alert("启动失败: " + e.message);
+    setPreviewStatus(false, "未启动");
+  } finally {
+    $("launch-btn").disabled = false;
+  }
+}
+
+async function stopPreview() {
+  if (!state.preview.run_id) return;
+  $("stop-btn").disabled = true;
+  try {
+    await api(
+      `/api/stop?run_id=${encodeURIComponent(state.preview.run_id)}`,
+      { method: "POST" }
+    );
+    state.preview.run_id = null;
+    state.preview.port = null;
+    setPreviewStatus(false, "未启动");
+    clearIframe();
+  } catch (e) {
+    alert("停止失败: " + e.message);
+  } finally {
+    $("stop-btn").disabled = !state.preview.port;
+  }
+}
+
+async function saveCases() {
+  if (state.mode === MODE_VISUAL) return saveVisualCases();
+  return saveClickCases();
+}
+
+async function saveClickCases() {
+  if (!state.selectedRun || !state.selectedVlm) return;
+  setSaveStatus("saving");
+  try {
+    const res = await api(
+      `/api/save?run_id=${encodeURIComponent(state.selectedRun)}` +
+      `&vlm=${encodeURIComponent(state.selectedVlm)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cases: state.cases }),
+      }
+    );
+    state.dirty = false;
+    setSaveStatus("saved");
+    showToast(buildSaveToast(res));
+  } catch (e) {
+    setSaveStatus("error");
+    alert("保存失败: " + e.message);
+  }
+}
+
+async function saveVisualCases() {
+  if (!state.selectedRun || !state.selectedVlm || !state.selectedJudge) return;
+  setSaveStatus("saving");
+  try {
+    const res = await api(
+      `/api/visual_save?run_id=${encodeURIComponent(state.selectedRun)}` +
+      `&judge=${encodeURIComponent(state.selectedJudge)}` +
+      `&click=${encodeURIComponent(state.selectedVlm)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cases: state.visualCases }),
+      }
+    );
+    state.dirty = false;
+    state.visualHumanExists = true;
+    setSaveStatus("saved");
+    showToast(buildVisualSaveToast(res));
+  } catch (e) {
+    setSaveStatus("error");
+    alert("保存失败: " + e.message);
+  }
+}
+
+function buildSaveToast(res) {
+  const s = res.summary || {};
+  const passRate = s.pass_rate != null ? `${(s.pass_rate * 100).toFixed(2)}%` : "-";
+  const agreement = s.agreement_rate != null ? `${(s.agreement_rate * 100).toFixed(2)}%` : "-";
+  return (
+    `<b>已保存 ✓</b><br/>` +
+    `人工通过率: <b>${passRate}</b> (${s.passed}/${s.total_cases}` +
+    (s.pending ? `, 待评 ${s.pending}` : "") + `)<br/>` +
+    `与 VLM 一致率: <b>${agreement}</b><br/>` +
+    `<span class="paths">` +
+    `· 详细: <code>${escapeHtml(res.cases_path)}</code><br/>` +
+    `· 报告: <code>${escapeHtml(res.report_path)}</code>` +
+    `</span>`
+  );
+}
+
+function buildVisualSaveToast(res) {
+  const s = res.summary || {};
+  const vs = s.vs_visual_judge_model || {};
+  const progress = s.judging_progress != null
+    ? `${(s.judging_progress * 100).toFixed(0)}%` : "-";
+  const avgH = s.avg_weighted_human != null ? s.avg_weighted_human.toFixed(2) : "-";
+  const exact = vs.exact_match_rate != null
+    ? `${(vs.exact_match_rate * 100).toFixed(1)}%` : "-";
+  const within1 = vs.within_1_rate != null
+    ? `${(vs.within_1_rate * 100).toFixed(1)}%` : "-";
+  const mae = vs.mae_per_dim != null ? vs.mae_per_dim.toFixed(2) : "-";
+  return (
+    `<b>已保存 ✓ (Visual Judge)</b><br/>` +
+    `进度: <b>${progress}</b> (${s.judged_pairs}/${s.total_pairs})<br/>` +
+    `人工加权均分: <b>${avgH}</b> | MAE/dim: <b>${mae}</b><br/>` +
+    `与 ${escapeHtml(vs.model || "model")} 完全一致: <b>${exact}</b>, ±1 内: <b>${within1}</b><br/>` +
+    `<span class="paths">` +
+    `· 详细: <code>${escapeHtml(res.cases_path)}</code><br/>` +
+    `· 报告: <code>${escapeHtml(res.report_path)}</code>` +
+    `</span>`
+  );
+}
+
+function showToast(html, ms = 6000) {
+  let toast = document.getElementById("save-toast");
+  if (toast) toast.remove();
+  toast = document.createElement("div");
+  toast.id = "save-toast";
+  toast.className = "save-toast";
+  toast.innerHTML = html;
+  document.body.appendChild(toast);
+  // trigger CSS transition
+  requestAnimationFrame(() => toast.classList.add("show"));
+  setTimeout(() => {
+    toast.classList.remove("show");
+    setTimeout(() => toast.remove(), 300);
+  }, ms);
+  toast.addEventListener("click", () => {
+    toast.classList.remove("show");
+    setTimeout(() => toast.remove(), 300);
+  });
+}
+
+//=========================================================================
+// UI 渲染
+//=========================================================================
+function setSummary(text) {
+  $("summary").innerHTML = `<span>${text}</span>`;
+}
+
+function setPreviewStatus(on, text) {
+  const dot = $("preview-status").querySelector(".dot");
+  dot.classList.toggle("on", on);
+  $("preview-status-text").textContent = text;
+}
+
+function setSaveStatus(mode) {
+  const el = $("save-status");
+  el.classList.remove("saved", "error");
+  if (mode === "saved") {
+    el.classList.add("saved");
+    el.textContent = "已同步";
+    $("save-btn").disabled = true;
+  } else if (mode === "saving") {
+    el.textContent = "保存中 ...";
+  } else if (mode === "dirty") {
+    el.textContent = "● 有未保存改动";
+    $("save-btn").disabled = false;
+  } else if (mode === "unsaved-initial") {
+    // No human-eval file on disk yet — enable Save so even a clean run
+    // (where the user has nothing to edit) can be persisted.
+    el.textContent = "● 待初次保存";
+    $("save-btn").disabled = false;
+  } else if (mode === "error") {
+    el.classList.add("error");
+    el.textContent = "✗ 保存失败";
+  }
+}
+
+function caseMatchesFilter(c) {
+  const { kw, mode } = state.filter;
+  if (kw && !c.test_id.toLowerCase().includes(kw.toLowerCase())) return false;
+  if (mode === "all") return true;
+  if (mode === "pending") return c.human_verdict === null;
+  if (mode === "disagree") {
+    if (c.human_verdict === null) return false;
+    return Boolean(c.human_verdict) !== Boolean(c.vlm_passed);
+  }
+  if (mode === "vlm_pass") return c.vlm_passed === true;
+  if (mode === "vlm_fail") return c.vlm_passed === false;
+  return true;
+}
+
+function visualCaseMatchesFilter(c) {
+  const { kw, mode } = state.visualFilter;
+  if (kw && !c.test_id.toLowerCase().includes(kw.toLowerCase())) return false;
+  const judged = visualPairsJudged(c);
+  const totalPairs = visualPairCount(c);
+  if (mode === "all") return true;
+  if (mode === "pending") return judged < totalPairs;
+  if (mode === "judged") return judged > 0 && judged === totalPairs;
+  if (mode === "disagree") return visualMaxDisagreement(c) >= 2;
+  return true;
+}
+
+function visualPairCount(c) {
+  return c.type === "page_exists" ? 1 : 2;
+}
+
+function visualPairsJudged(c) {
+  let n = 0;
+  if (visualPairFilled(c.human_before)) n++;
+  if (c.type !== "page_exists" && visualPairFilled(c.human_after)) n++;
+  return n;
+}
+
+function visualPairFilled(s) {
+  if (!s || typeof s !== "object") return false;
+  return VISUAL_DIMS.every((d) => Number.isInteger(s[d]) && s[d] >= 1 && s[d] <= 5);
+}
+
+function visualWeighted(s) {
+  if (!s || typeof s !== "object") return null;
+  let total = 0, seen = 0;
+  for (const d of VISUAL_DIMS) {
+    const v = s[d];
+    if (Number.isFinite(v) && v >= 1 && v <= 5) {
+      total += v * VISUAL_DIM_WEIGHTS[d];
+      seen++;
+    }
+  }
+  return seen ? Math.round(total * 100) / 100 : null;
+}
+
+function visualMaxDisagreement(c) {
+  let max = 0;
+  for (const slot of ["before", "after"]) {
+    if (slot === "after" && c.type === "page_exists") continue;
+    const h = c["human_" + slot];
+    const m = c["model_" + slot];
+    if (!h || !m) continue;
+    for (const d of VISUAL_DIMS) {
+      if (Number.isInteger(h[d]) && Number.isInteger(m[d])) {
+        max = Math.max(max, Math.abs(h[d] - m[d]));
+      }
+    }
+  }
+  return max;
+}
+
+function renderCaseItem(c) {
+  const item = document.createElement("div");
+  item.className = "case-item" + (c.test_id === state.selectedTestId ? " active" : "");
+  item.dataset.testId = c.test_id;
+
+  let badgeCls = "pending", badgeChar = "?";
+  if (c.human_verdict === true) { badgeCls = "pass"; badgeChar = "✓"; }
+  else if (c.human_verdict === false) { badgeCls = "fail"; badgeChar = "✗"; }
+
+  const vlmCls = c.vlm_passed ? "pass" : "fail";
+  const vlmTxt = c.vlm_passed ? "VLM✓" : "VLM✗";
+  let hTag = "";
+  if (c.human_verdict === true) hTag = '<span class="h-tag pass">Human✓</span>';
+  else if (c.human_verdict === false) hTag = '<span class="h-tag fail">Human✗</span>';
+  else hTag = '<span class="h-tag">Human?</span>';
+
+  item.innerHTML =
+    `<div class="badge ${badgeCls}">${badgeChar}</div>` +
+    `<div class="text">` +
+      `<div class="test-id">${c.test_id}</div>` +
+      `<div class="meta">` +
+        `<span class="vlm-tag ${vlmCls}">${vlmTxt}</span>` +
+        hTag +
+      `</div>` +
+    `</div>`;
+  item.addEventListener("click", () => {
+    state.selectedTestId = c.test_id;
+    renderCaseList();
+    renderDetail();
+  });
+  return item;
+}
+
+function renderCaseList() {
+  if (state.mode === MODE_VISUAL) return renderVisualCaseList();
+  return renderClickCaseList();
+}
+
+function renderClickCaseList() {
+  const list = $("case-list");
+  if (state.loading) { list.innerHTML = ""; return; }
+  if (!state.cases.length) {
+    setSummary("无 case");
+    list.innerHTML = '<div style="padding:20px; color:#9ca3af; font-size:12px;">无 case</div>';
+    return;
+  }
+
+  // overall summary
+  const total = state.cases.length;
+  const vlmFail = state.cases.filter((c) => !c.vlm_passed).length;
+  const pending = state.cases.filter((c) => c.human_verdict === null).length;
+  const disagree = state.cases.filter(
+    (c) => c.human_verdict !== null && Boolean(c.human_verdict) !== Boolean(c.vlm_passed)
+  ).length;
+  $("summary").innerHTML =
+    `<span>共 ${total} | VLM✗ ${vlmFail}</span>` +
+    `<span>待评 ${pending} | 分歧 ${disagree}</span>`;
+
+  list.innerHTML = "";
+
+  // group cases by type
+  const byType = {};
+  for (const c of state.cases) {
+    (byType[c.type] || (byType[c.type] = [])).push(c);
+  }
+  // include any unknown types at the end
+  const orderedKeys = TYPE_GROUPS.map((g) => g.key);
+  for (const k of Object.keys(byType)) {
+    if (!orderedKeys.includes(k)) orderedKeys.push(k);
+  }
+
+  let renderedAny = false;
+  for (const typeKey of orderedKeys) {
+    const cases = byType[typeKey] || [];
+    if (cases.length === 0) continue;
+
+    const def = TYPE_GROUPS.find((g) => g.key === typeKey);
+    const label = def ? def.label : typeKey;
+
+    const tTotal = cases.length;
+    const tPass = cases.filter((c) => c.vlm_passed).length;
+    const tPending = cases.filter((c) => c.human_verdict === null).length;
+    const tDisagree = cases.filter(
+      (c) => c.human_verdict !== null && Boolean(c.human_verdict) !== Boolean(c.vlm_passed)
+    ).length;
+
+    const collapsed = state.collapsedGroups.has(typeKey);
+    const header = document.createElement("div");
+    header.className = "group-header" + (collapsed ? " collapsed" : "");
+    header.innerHTML =
+      `<span class="arrow">▼</span>` +
+      `<span class="group-name">${label}</span>` +
+      (tPending ? `<span class="group-pending">待评 ${tPending}</span>` : "") +
+      (tDisagree ? `<span class="group-disagree">分歧 ${tDisagree}</span>` : "") +
+      `<span class="group-stats">${tPass}/${tTotal}</span>`;
+    header.addEventListener("click", () => {
+      if (state.collapsedGroups.has(typeKey)) state.collapsedGroups.delete(typeKey);
+      else state.collapsedGroups.add(typeKey);
+      renderCaseList();
+    });
+    list.appendChild(header);
+
+    if (collapsed) continue;
+
+    const filtered = cases.filter(caseMatchesFilter);
+    if (filtered.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "group-empty";
+      empty.textContent = "(此分组无匹配 case)";
+      list.appendChild(empty);
+      continue;
+    }
+    for (const c of filtered) {
+      list.appendChild(renderCaseItem(c));
+      renderedAny = true;
+    }
+  }
+
+  if (!renderedAny && state.cases.length > 0
+      && state.cases.every((c) => !caseMatchesFilter(c))) {
+    const empty = document.createElement("div");
+    empty.style.cssText = "padding:20px; color:#9ca3af; font-size:12px;";
+    empty.textContent = "无匹配 case";
+    list.appendChild(empty);
+  }
+}
+
+function renderDetail() {
+  if (state.mode === MODE_VISUAL) return renderVisualDetail();
+  return renderClickDetail();
+}
+
+function renderClickDetail() {
+  const panel = $("detail-panel");
+  const c = state.cases.find((x) => x.test_id === state.selectedTestId);
+  if (!c) {
+    panel.innerHTML = '<div class="empty">从左侧选择一个测试用例</div>';
+    $("goto-route-btn").disabled = true;
+    return;
+  }
+
+  const beforeUrl = c.screenshot_before
+    ? `/screenshot?path=${encodeURIComponent(c.screenshot_before)}`
+    : "";
+  const afterUrl = c.screenshot_after
+    ? `/screenshot?path=${encodeURIComponent(c.screenshot_after)}`
+    : "";
+
+  const vlmTagCls = c.vlm_passed ? "pass" : "fail";
+  const vlmTagTxt = c.vlm_passed ? "通过" : "失败";
+
+  const passSel = c.human_verdict === true ? "selected" : "";
+  const failSel = c.human_verdict === false ? "selected" : "";
+
+  const errorRow = c.error
+    ? `<div class="info-row"><span class="k">error</span><span class="v warn">${escapeHtml(c.error)}</span></div>`
+    : "";
+
+  // page_exists 类型 before == after，只展示一张
+  const isPageExists = c.type === "page_exists";
+  let screenshotsHtml = "";
+  if (isPageExists) {
+    if (beforeUrl) {
+      screenshotsHtml = `
+        <div class="screenshots single">
+          <div class="screenshot-box">
+            <div class="label">页面截图
+              <span class="label-tag">page_exists</span>
+            </div>
+            <img src="${beforeUrl}" alt="page" data-zoom="${beforeUrl}" />
+          </div>
+        </div>`;
+    }
+  } else {
+    screenshotsHtml = `
+      <div class="screenshots">
+        ${beforeUrl ? `
+        <div class="screenshot-box">
+          <div class="label">操作前 (Before)
+            <span class="label-tag">起点</span>
+          </div>
+          <img src="${beforeUrl}" alt="before" data-zoom="${beforeUrl}" />
+        </div>` : ""}
+        ${afterUrl ? `
+        <div class="screenshot-box">
+          <div class="label">操作后 (After)
+            <span class="label-tag">实际终点</span>
+          </div>
+          <img src="${afterUrl}" alt="after" data-zoom="${afterUrl}" />
+        </div>` : ""}
+      </div>`;
+  }
+
+  // ---- Action / from-to info ----
+  const action = c.action || {};
+  const fromPage = c.from_page || {};
+  const toPage = c.to_page || {};
+  const fromName = fromPage.page_name || "?";
+  const toName = toPage.page_name || "?";
+
+  const textHints = (action.text_hints || []).map(
+    (h) => `<span class="pill text">"${escapeHtml(h)}"</span>`
+  ).join("");
+  const domHints = (action.dom_selector_hints || []).slice(0, 4).map(
+    (h) => `<span class="pill dom">${escapeHtml(h)}</span>`
+  ).join("");
+
+  let strategyPill = "";
+  if (action.strategy) {
+    strategyPill = `<span class="pill">strategy: ${escapeHtml(action.strategy)}</span>`;
+  }
+  if (action.tab_position != null) {
+    strategyPill += `<span class="pill">tab #${action.tab_position}</span>`;
+  }
+
+  const actionCard = `
+    <div class="info-card action-card">
+      <h3>Action 操作描述</h3>
+      <div class="desc">${escapeHtml(action.description || "")}</div>
+      ${(strategyPill || textHints || domHints) ? `
+      <div class="pill-row">${strategyPill}${textHints}${domHints}</div>
+      ` : ""}
+      ${(fromPage.page_name || toPage.page_name) ? `
+      <div class="from-to">
+        <code>${escapeHtml(fromName)}</code>
+        <span class="arrow">→</span>
+        <code>${escapeHtml(toName)}</code>
+        ${fromPage.route_hint ? `<span style="color:#9ca3af; font-size:11px;">(route: ${escapeHtml(fromPage.route_hint)})</span>` : ""}
+      </div>
+      ` : ""}
+    </div>
+  `;
+
+  panel.innerHTML = `
+    <div class="info-row-2col">
+      <div class="info-card">
+        <h3>测试用例</h3>
+        <div class="test-id-big">${c.test_id}</div>
+        <div class="info-row"><span class="k">type</span><span class="v">${c.type || "-"}</span></div>
+        <div class="info-row"><span class="k">expected_route</span><span class="v">${c.expected_route || "-"}</span></div>
+        <div class="info-row"><span class="k">final_url</span><span class="v">${c.final_url || "-"}</span></div>
+        <div class="info-row"><span class="k">navigation</span><span class="v">${c.navigation_success ? "成功" : "失败"}</span></div>
+        ${errorRow}
+      </div>
+      ${actionCard}
+    </div>
+
+    ${screenshotsHtml}
+
+    <div class="verdict-card">
+      <div class="vlm-line">
+        VLM click_model (<code>${state.selectedVlm}</code>) 判定:
+        <span class="vlm-tag ${vlmTagCls}">${vlmTagTxt}</span>
+      </div>
+      <div class="h-line">Human verdict:</div>
+      <div class="verdict-buttons">
+        <button class="pass ${passSel}" data-verdict="pass">👍 通过 (PASS)</button>
+        <button class="fail ${failSel}" data-verdict="fail">👎 失败 (FAIL)</button>
+        <button class="clear" data-verdict="clear">清除</button>
+      </div>
+      <div class="note-area">
+        <textarea id="note-input" placeholder="Human note (optional, does not affect agreement stats)">${escapeHtml(c.human_note || "")}</textarea>
+      </div>
+    </div>
+  `;
+
+  // verdict button handlers
+  panel.querySelectorAll(".verdict-buttons button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const v = btn.dataset.verdict;
+      if (v === "pass") c.human_verdict = true;
+      else if (v === "fail") c.human_verdict = false;
+      else c.human_verdict = null;
+      markDirty();
+      renderCaseList();
+      renderDetail();
+    });
+  });
+
+  // note input handler (debounced)
+  const noteEl = $("note-input");
+  let noteTimer = null;
+  noteEl.addEventListener("input", () => {
+    c.human_note = noteEl.value;
+    markDirty();
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => { /* keeps state, save by button */ }, 300);
+  });
+
+  // image zoom
+  panel.querySelectorAll("img[data-zoom]").forEach((img) => {
+    img.addEventListener("click", () => openLightbox(img.dataset.zoom));
+  });
+
+  // enable goto-route button if preview active and we have a route
+  $("goto-route-btn").disabled = !(state.preview.port && c.expected_route);
+}
+
+//=========================================================================
+// Visual Judge mode — sidebar list + detail panel
+//=========================================================================
+function renderVisualCaseList() {
+  const list = $("case-list");
+  if (state.loading) { list.innerHTML = ""; return; }
+  if (!state.visualCases.length) {
+    setSummary("无 case");
+    list.innerHTML =
+      '<div style="padding:20px; color:#9ca3af; font-size:12px;">' +
+      '无 case （选择有 navigation_test 报告的 run/click_tag 后再切换 Visual Judge）' +
+      '</div>';
+    return;
+  }
+
+  const totalCases = state.visualCases.length;
+  let totalPairs = 0, judgedPairs = 0, disagreeCases = 0;
+  for (const c of state.visualCases) {
+    totalPairs += visualPairCount(c);
+    judgedPairs += visualPairsJudged(c);
+    if (visualMaxDisagreement(c) >= 2) disagreeCases++;
+  }
+  $("summary").innerHTML =
+    `<span>共 ${totalCases} | 配对 ${totalPairs}</span>` +
+    `<span>已评 ${judgedPairs} | 分歧≥2 ${disagreeCases}</span>`;
+
+  list.innerHTML = "";
+
+  const byType = {};
+  for (const c of state.visualCases) {
+    (byType[c.type] || (byType[c.type] = [])).push(c);
+  }
+  const orderedKeys = TYPE_GROUPS.map((g) => g.key);
+  for (const k of Object.keys(byType)) {
+    if (!orderedKeys.includes(k)) orderedKeys.push(k);
+  }
+
+  for (const typeKey of orderedKeys) {
+    const cases = byType[typeKey] || [];
+    if (!cases.length) continue;
+    const def = TYPE_GROUPS.find((g) => g.key === typeKey);
+    const label = def ? def.label : typeKey;
+
+    const tTotalPairs = cases.reduce((s, c) => s + visualPairCount(c), 0);
+    const tJudgedPairs = cases.reduce((s, c) => s + visualPairsJudged(c), 0);
+    const tPending = tTotalPairs - tJudgedPairs;
+    const tDisagree = cases.filter((c) => visualMaxDisagreement(c) >= 2).length;
+
+    const collapsed = state.collapsedGroups.has(typeKey);
+    const header = document.createElement("div");
+    header.className = "group-header" + (collapsed ? " collapsed" : "");
+    header.innerHTML =
+      `<span class="arrow">▼</span>` +
+      `<span class="group-name">${label}</span>` +
+      (tPending ? `<span class="group-pending">未评 ${tPending}</span>` : "") +
+      (tDisagree ? `<span class="group-disagree">分歧 ${tDisagree}</span>` : "") +
+      `<span class="group-stats">${tJudgedPairs}/${tTotalPairs}</span>`;
+    header.addEventListener("click", () => {
+      if (state.collapsedGroups.has(typeKey)) state.collapsedGroups.delete(typeKey);
+      else state.collapsedGroups.add(typeKey);
+      renderCaseList();
+    });
+    list.appendChild(header);
+
+    if (collapsed) continue;
+
+    const filtered = cases.filter(visualCaseMatchesFilter);
+    if (!filtered.length) {
+      const empty = document.createElement("div");
+      empty.className = "group-empty";
+      empty.textContent = "(此分组无匹配 case)";
+      list.appendChild(empty);
+      continue;
+    }
+    for (const c of filtered) {
+      list.appendChild(renderVisualCaseItem(c));
+    }
+  }
+}
+
+function renderVisualCaseItem(c) {
+  const item = document.createElement("div");
+  item.className = "case-item" + (c.test_id === state.selectedTestId ? " active" : "");
+  item.dataset.testId = c.test_id;
+
+  const judged = visualPairsJudged(c);
+  const total = visualPairCount(c);
+  let badgeCls = "pending", badgeChar = "?";
+  if (judged === total) { badgeCls = "pass"; badgeChar = "✓"; }
+  else if (judged > 0) { badgeCls = "pending"; badgeChar = String(judged); }
+
+  // Average human/model weighted score across pairs
+  const hScores = [];
+  const mScores = [];
+  for (const slot of ["before", "after"]) {
+    if (slot === "after" && c.type === "page_exists") continue;
+    const hw = visualWeighted(c["human_" + slot]);
+    if (hw != null) hScores.push(hw);
+    const mw = c["model_" + slot] && c["model_" + slot].weighted;
+    if (mw != null) mScores.push(mw);
+  }
+  const hAvg = hScores.length
+    ? (hScores.reduce((a, b) => a + b, 0) / hScores.length).toFixed(2) : null;
+  const mAvg = mScores.length
+    ? (mScores.reduce((a, b) => a + b, 0) / mScores.length).toFixed(2) : null;
+
+  const hTag = hAvg != null
+    ? `<span class="vj-tag h">H ${hAvg}</span>`
+    : `<span class="vj-tag empty">H -</span>`;
+  const mTag = mAvg != null
+    ? `<span class="vj-tag m">M ${mAvg}</span>`
+    : `<span class="vj-tag empty">M -</span>`;
+  const dis = visualMaxDisagreement(c);
+  const disTag = dis >= 2 ? `<span class="vj-tag" style="background:#fee2e2;color:#991b1b">Δ${dis}</span>` : "";
+
+  item.innerHTML =
+    `<div class="badge ${badgeCls}">${badgeChar}</div>` +
+    `<div class="text">` +
+      `<div class="test-id">${c.test_id}</div>` +
+      `<div class="meta">${hTag}${mTag}${disTag}</div>` +
+    `</div>`;
+  item.addEventListener("click", () => {
+    state.selectedTestId = c.test_id;
+    renderCaseList();
+    renderDetail();
+  });
+  return item;
+}
+
+function renderVisualDetail() {
+  const panel = $("detail-panel");
+  const c = state.visualCases.find((x) => x.test_id === state.selectedTestId);
+  if (!c) {
+    panel.innerHTML = '<div class="empty">从左侧选择一个测试用例</div>';
+    $("goto-route-btn").disabled = true;
+    return;
+  }
+
+  // Summary card with judge model context
+  const jSummary = (state.visualMeta && state.visualMeta.judge_summary) || {};
+  const summaryCardHtml = `
+    <div class="vj-summary-card">
+      <div class="stat">
+        <span class="k">Judge model</span>
+        <span class="v" style="font-size:12px">${escapeHtml(state.selectedJudge || "-")}</span>
+      </div>
+      <div class="stat">
+        <span class="k">Click 截图</span>
+        <span class="v" style="font-size:12px">${escapeHtml(state.selectedVlm || "-")}</span>
+      </div>
+      <div class="stat">
+        <span class="k">Auto avg before</span>
+        <span class="v">${jSummary.avg_before != null ? jSummary.avg_before : "-"}</span>
+      </div>
+      <div class="stat">
+        <span class="k">Auto avg after</span>
+        <span class="v">${jSummary.avg_after != null ? jSummary.avg_after : "-"}</span>
+      </div>
+    </div>
+  `;
+
+  // Action / context card
+  const fromName = (c.from_page && c.from_page.page_name) || "?";
+  const toName = (c.to_page && c.to_page.page_name) || "?";
+  const ctxCardHtml = `
+    <div class="info-row-2col">
+      <div class="info-card">
+        <h3>测试用例</h3>
+        <div class="test-id-big">${c.test_id}</div>
+        <div class="info-row"><span class="k">type</span><span class="v">${c.type || "-"}</span></div>
+        <div class="info-row"><span class="k">expected_route</span><span class="v">${c.expected_route || "-"}</span></div>
+      </div>
+      <div class="info-card action-card">
+        <h3>页面</h3>
+        <div class="from-to">
+          <code>${escapeHtml(fromName)}</code>
+          <span class="arrow">→</span>
+          <code>${escapeHtml(toName)}</code>
+        </div>
+        <div class="from-to" style="margin-top:8px;">
+          <span style="color:#9ca3af;font-size:11px">参考截图:</span>
+          <code>${escapeHtml((c.from_page && c.from_page.reference_screenshot) || "-")}</code>
+          ${c.type !== "page_exists" ? `<code>${escapeHtml((c.to_page && c.to_page.reference_screenshot) || "-")}</code>` : ""}
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Pair cards
+  const pairs = [];
+  if (c.type === "page_exists") {
+    pairs.push({
+      slot: "before", labelTag: "single", label: "页面参考 vs 实际渲染",
+      design: c.design_before_path, impl: c.screenshot_before,
+      model: c.model_before, human: c.human_before,
+    });
+  } else {
+    pairs.push({
+      slot: "before", labelTag: "before", label: "Before — 起点页",
+      design: c.design_before_path, impl: c.screenshot_before,
+      model: c.model_before, human: c.human_before,
+    });
+    pairs.push({
+      slot: "after", labelTag: "after", label: "After — 终点页",
+      design: c.design_after_path, impl: c.screenshot_after,
+      model: c.model_after, human: c.human_after,
+    });
+  }
+
+  const pairsHtml = pairs.map((p) => renderVisualPairHtml(c, p)).join("");
+
+  const noteHtml = `
+    <div class="verdict-card">
+      <div class="h-line">Human note (optional):</div>
+      <div class="note-area">
+        <textarea id="visual-note-input" placeholder="备注 (例如: 模型把按钮位置打分过低)">${escapeHtml(c.human_note || "")}</textarea>
+      </div>
+    </div>
+  `;
+
+  panel.innerHTML = summaryCardHtml + ctxCardHtml + pairsHtml + noteHtml;
+
+  // Wire up score buttons
+  panel.querySelectorAll(".vj-pair").forEach((pairEl) => {
+    const slot = pairEl.dataset.slot;
+    pairEl.querySelectorAll(".vj-dim-row").forEach((row) => {
+      const dim = row.dataset.dim;
+      row.querySelectorAll(".scale button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const v = Number(btn.dataset.score);
+          setVisualScore(c, slot, dim, v);
+        });
+      });
+    });
+    const copyBtn = pairEl.querySelector(".copy-from-model");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", () => copyModelScores(c, slot));
+    }
+    const copyPrevBtn = pairEl.querySelector(".copy-prev");
+    if (copyPrevBtn) {
+      copyPrevBtn.addEventListener("click", () => {
+        const refName = decodeURIComponent(copyPrevBtn.dataset.ref || "");
+        copyPreviousReference(c, slot, refName);
+      });
+    }
+    const issuesEl = pairEl.querySelector(".issues-input");
+    if (issuesEl) {
+      issuesEl.addEventListener("input", () => {
+        const lines = issuesEl.value.split("\n").map((s) => s.trim()).filter(Boolean);
+        ensureHumanSlot(c, slot).issues = lines;
+        markDirty();
+      });
+    }
+  });
+
+  // Note handler
+  const noteEl = $("visual-note-input");
+  if (noteEl) {
+    noteEl.addEventListener("input", () => {
+      c.human_note = noteEl.value;
+      markDirty();
+    });
+  }
+
+  // Image zoom
+  panel.querySelectorAll("img[data-zoom]").forEach((img) => {
+    img.addEventListener("click", () => openLightbox(img.dataset.zoom));
+  });
+
+  $("goto-route-btn").disabled = !(state.preview.port && c.expected_route);
+}
+
+function renderVisualPairHtml(c, p) {
+  const designUrl = p.design
+    ? `/screenshot?path=${encodeURIComponent(p.design)}` : "";
+  const implUrl = p.impl
+    ? `/screenshot?path=${encodeURIComponent(p.impl)}` : "";
+
+  const designSrc = (c.from_page && p.slot === "before"
+      ? c.from_page.reference_screenshot
+      : (c.to_page && c.to_page.reference_screenshot)) || "";
+
+  const designBox = designUrl
+    ? `<img src="${designUrl}" alt="design" data-zoom="${designUrl}" />`
+    : `<div class="img-missing">无设计参考图<br/><code>${escapeHtml(designSrc || "(reference_screenshot 缺失)")}</code></div>`;
+  const implBox = implUrl
+    ? `<img src="${implUrl}" alt="impl" data-zoom="${implUrl}" />`
+    : `<div class="img-missing">无实现截图</div>`;
+
+  const human = p.human || {};
+  const model = p.model || {};
+
+  const dimsHtml = VISUAL_DIMS.map((dim) => {
+    const hVal = human[dim];
+    const mVal = model[dim];
+    const buttons = [1, 2, 3, 4, 5].map((n) => {
+      const cls = [
+        "scale-btn",
+        hVal === n ? "selected" : "",
+        mVal === n ? "model-suggest" : "",
+      ].filter(Boolean).join(" ");
+      return `<button class="${cls}" data-score="${n}">${n}</button>`;
+    }).join("");
+    let mPillCls = "empty";
+    let mPillText = "model -";
+    if (mVal != null) {
+      mPillText = `model ${mVal}`;
+      if (Number.isInteger(hVal)) {
+        mPillCls = (hVal === mVal) ? "match" : "diff";
+      } else {
+        mPillCls = "";
+      }
+    }
+    const w = (VISUAL_DIM_WEIGHTS[dim] * 100).toFixed(0) + "%";
+    return `
+      <div class="vj-dim-row" data-dim="${dim}">
+        <div class="name">${escapeHtml(VISUAL_DIM_LABELS[dim])} <span class="w">(${w})</span></div>
+        <div class="scale">${buttons}</div>
+        <div class="model-pill ${mPillCls}">${escapeHtml(mPillText)}</div>
+      </div>
+    `;
+  }).join("");
+
+  const hWeighted = visualWeighted(human);
+  const mWeighted = (model && model.weighted) != null ? model.weighted : null;
+  const weightedTag = hWeighted != null
+    ? `<span class="pair-tag weight">人工 ${hWeighted.toFixed ? hWeighted.toFixed(2) : hWeighted}</span>`
+    : "";
+  const modelWeightedTag = mWeighted != null
+    ? `<span class="pair-tag weight" style="background:#92400e">模型 ${mWeighted}</span>`
+    : "";
+
+  const modelIssues = (model.issues || []).filter(Boolean);
+  const humanIssuesText = (human.issues || []).join("\n");
+
+  const copyBtnAttr = (model.layout != null && model.style != null
+    && model.content != null && model.consistency != null) ? "" : "disabled";
+
+  // Look across all cases for already-scored pairs sharing this design ref.
+  const prevMatches = findScoredPairsForReference(designSrc, c.test_id, p.slot);
+  const prevBtnAttr = prevMatches.length ? "" : "disabled";
+  const prevHint = prevMatches.length
+    ? ` (${prevMatches.length} 处)` : "";
+  const prevTitle = prevMatches.length
+    ? `复用「${escapeHtml(prevMatches[prevMatches.length - 1].caseId)}」(${prevMatches[prevMatches.length - 1].slot}) 的人工评分`
+    : "无其他已评相同参考图的用例";
+  const prevDataRef = encodeURIComponent(designSrc || "");
+
+  return `
+    <div class="vj-pair" data-slot="${p.slot}">
+      <div class="pair-head">
+        <span class="pair-tag ${p.labelTag}">${p.labelTag}</span>
+        <span class="pair-title">${escapeHtml(p.label)}</span>
+        ${weightedTag}${modelWeightedTag}
+        <div class="pair-actions">
+          <button class="copy-prev" ${prevBtnAttr}
+                  data-ref="${prevDataRef}" title="${prevTitle}">
+            ↩ 复用同参考图${prevHint}
+          </button>
+          <button class="copy-from-model" ${copyBtnAttr}>↧ 复制模型评分</button>
+        </div>
+      </div>
+      <div class="vj-images">
+        <div class="vj-img-box">
+          <div class="lbl design">DESIGN (参考) <span class="src">${escapeHtml(designSrc)}</span></div>
+          ${designBox}
+        </div>
+        <div class="vj-img-box">
+          <div class="lbl impl">IMPLEMENTATION (实际) <span class="src">${escapeHtml(p.impl ? p.impl.split("/").pop() : "")}</span></div>
+          ${implBox}
+        </div>
+      </div>
+      <div class="vj-dims">${dimsHtml}</div>
+      <div class="vj-issues">
+        <div class="lbl">
+          ISSUES (每行一条):
+          ${modelIssues.length
+            ? `<span class="model-issues">model: ${escapeHtml(modelIssues.join(" · "))}</span>`
+            : ""}
+        </div>
+        <textarea class="issues-input" placeholder="选填 — 留空表示无问题">${escapeHtml(humanIssuesText)}</textarea>
+      </div>
+    </div>
+  `;
+}
+
+function ensureHumanSlot(c, slot) {
+  const key = "human_" + slot;
+  if (!c[key] || typeof c[key] !== "object") {
+    c[key] = { layout: null, style: null, content: null, consistency: null, issues: [] };
+  }
+  return c[key];
+}
+
+// Look across ALL cases (any slot) for an already-scored pair whose design
+// reference_screenshot matches `refName`, excluding the current (caseId, slot)
+// so a pair never offers to copy from itself.
+function findScoredPairsForReference(refName, excludeId, excludeSlot) {
+  if (!refName) return [];
+  const matches = [];
+  for (const oc of state.visualCases) {
+    for (const slot of ["before", "after"]) {
+      if (oc.test_id === excludeId && slot === excludeSlot) continue;
+      if (slot === "after" && oc.type === "page_exists") continue;
+      const pageInfo = slot === "before" ? oc.from_page : oc.to_page;
+      const otherRef = pageInfo && pageInfo.reference_screenshot;
+      if (otherRef !== refName) continue;
+      const hum = oc["human_" + slot];
+      if (!visualPairFilled(hum)) continue;
+      matches.push({
+        caseId: oc.test_id,
+        slot,
+        scores: hum,
+        pageName: (pageInfo && pageInfo.page_name) || "?",
+      });
+    }
+  }
+  return matches;
+}
+
+function copyPreviousReference(c, slot, refName) {
+  const matches = findScoredPairsForReference(refName, c.test_id, slot);
+  if (!matches.length) return;
+  // Prefer an exact (page_name, slot) twin if present; otherwise take the most
+  // recent in document order (which mirrors the file order in the JSON).
+  const target = ensureHumanSlot(c, slot);
+  const src = matches[matches.length - 1].scores;
+  for (const d of VISUAL_DIMS) {
+    if (Number.isInteger(src[d])) target[d] = src[d];
+  }
+  // Don't copy issues — they're pair-specific (e.g. mention the action that
+  // triggered the rendering).
+  markDirty();
+  renderCaseList();
+  renderDetail();
+}
+
+function setVisualScore(c, slot, dim, score) {
+  const obj = ensureHumanSlot(c, slot);
+  // Toggle off if clicked twice
+  if (obj[dim] === score) {
+    obj[dim] = null;
+  } else {
+    obj[dim] = score;
+  }
+  markDirty();
+  renderCaseList();
+  renderDetail();
+}
+
+function copyModelScores(c, slot) {
+  const model = c["model_" + slot];
+  if (!model) return;
+  const target = ensureHumanSlot(c, slot);
+  for (const d of VISUAL_DIMS) {
+    if (Number.isInteger(model[d])) target[d] = model[d];
+  }
+  // Don't copy issues — those are model-generated and rarely match what the
+  // human would write.
+  markDirty();
+  renderCaseList();
+  renderDetail();
+}
+
+function markDirty() {
+  state.dirty = true;
+  setSaveStatus("dirty");
+}
+
+function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+//=========================================================================
+// Iframe 预览
+//=========================================================================
+function setIframe(routePath) {
+  const area = $("frame-area");
+  if (!state.preview.port) {
+    clearIframe();
+    return;
+  }
+  const url = buildPreviewUrl(routePath || "/");
+  // Cache-bust the iframe URL — the preview port is fixed across runs, so
+  // without this the browser may serve the previous run's cached HTML/JS
+  // when switching apps. (Belt-and-suspenders alongside no-store headers.)
+  const sep = url.includes("?") ? "&" : "?";
+  const bustUrl = `${url}${sep}_t=${Date.now()}`;
+  console.log("[human_eval] setIframe → loading", bustUrl);
+
+  // Hard-reset the frame area: nuke any previous iframe / hint / loading
+  // overlay so the browser cannot reuse element-state from the previous run.
+  area.style.position = "relative";
+  area.innerHTML = "";
+
+  const loading = document.createElement("div");
+  loading.id = "frame-loading";
+  loading.style.cssText = (
+    "position:absolute; inset:14px; display:flex; align-items:center;" +
+    " justify-content:center; pointer-events:none; color:#fff;" +
+    " background:rgba(15,23,42,0.7); border-radius:16px; z-index:2;" +
+    " font-size:13px;"
+  );
+  loading.textContent = "正在加载 app ...";
+
+  const iframe = document.createElement("iframe");
+  iframe.id = "app-frame";
+  iframe.addEventListener("load", () => {
+    console.log("[human_eval] iframe load fired:", iframe.src);
+    if (iframe.src.startsWith("about:blank")) {
+      // First load (about:blank) — now navigate to the real URL.
+      // Two-step navigation forces a fresh document context even when the
+      // target URL points at the same origin we previously loaded from.
+      iframe.src = bustUrl;
+      return;
+    }
+    document.getElementById("frame-loading")?.remove();
+    document.getElementById("frame-error-hint")?.remove();
+  });
+  iframe.addEventListener("error", () => {
+    console.warn("[human_eval] iframe error event");
+  });
+  // Append iframe FIRST (with about:blank), then loading overlay on top.
+  iframe.src = "about:blank";
+  area.appendChild(iframe);
+  area.appendChild(loading);
+
+  $("frame-url").value = url;
+  $("reload-frame-btn").disabled = false;
+
+  // After 3 seconds, if the iframe is still blank/cross-origin-blocked, show a hint.
+  setTimeout(() => {
+    const f = document.getElementById("app-frame");
+    if (!f) return;
+    let blank = false;
+    try {
+      // Cross-origin frames will throw here, which is fine — an actually-loaded
+      // SPA from another port will throw too. We only show a hint when the
+      // iframe failed to navigate at all (no src loaded).
+      if (f.contentDocument && f.contentDocument.body
+          && f.contentDocument.body.children.length === 0) {
+        blank = true;
+      }
+    } catch (e) { /* cross-origin = healthy */ }
+    if (!blank) return;
+    if (document.getElementById("frame-error-hint")) return;
+    const hint = document.createElement("div");
+    hint.id = "frame-error-hint";
+    hint.className = "frame-empty";
+    hint.style.background = "rgba(0,0,0,0.6)";
+    hint.style.position = "absolute";
+    hint.style.inset = "20px";
+    hint.style.borderRadius = "8px";
+    hint.innerHTML = `
+      <b style="color:#fbbf24">⚠ App 预览加载失败</b><br />
+      最常见的原因：iframe 访问的端口 <code>${state.preview.port}</code>
+      没有被转发到你的本机。<br /><br />
+      若你正在用 SSH/Cursor 端口转发访问 dashboard：<br />
+      请额外转发 <b>${state.preview.port}</b> 端口（已固定，多次启动不会变）。<br /><br />
+      <a class="open-link" href="${url}" target="_blank">▶ 在新标签页打开试试</a>
+    `;
+    $("frame-area").style.position = "relative";
+    $("frame-area").appendChild(hint);
+  }, 3000);
+}
+
+function clearIframe() {
+  $("frame-area").innerHTML =
+    '<div class="frame-empty">App 预览已停止</div>';
+  $("frame-url").value = "";
+  $("reload-frame-btn").disabled = true;
+}
+
+function buildPreviewUrl(routePath) {
+  const port = state.preview.port;
+  const host = window.location.hostname || "localhost";
+  let p = routePath || "/";
+  if (!p.startsWith("/")) p = "/" + p;
+  return `http://${host}:${port}${p}`;
+}
+
+function reloadFrame() {
+  if (!state.preview.port) return;
+  // Re-run setIframe so the URL gets a fresh timestamp and the iframe element
+  // is recreated from scratch — same logic as switching runs.
+  setIframe();
+}
+
+function gotoExpectedRoute() {
+  const c = state.cases.find((x) => x.test_id === state.selectedTestId);
+  if (!c || !c.expected_route) return;
+  setIframe(c.expected_route);
+}
+
+//=========================================================================
+// Lightbox
+//=========================================================================
+function openLightbox(url) {
+  const div = document.createElement("div");
+  div.className = "lightbox";
+  div.innerHTML = `<img src="${url}" />`;
+  div.addEventListener("click", () => div.remove());
+  document.body.appendChild(div);
+}
+
+//=========================================================================
+// 初始化 + 事件绑定
+//=========================================================================
+async function init() {
+  // load experiment name
+  try {
+    const ex = await api("/api/experiment");
+    $("experiment-name").textContent = ex.name;
+    document.title = `${ex.name} - 人工 VLM 一致性`;
+  } catch (e) { /* ignore */ }
+
+  applyMode();
+  await loadRuns();
+  await loadCases();
+
+  // ---- mode tabs ----
+  document.querySelectorAll("#mode-tabs button").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const newMode = btn.dataset.mode;
+      if (newMode === state.mode) return;
+      if (state.dirty && !confirm("有未保存的改动，确认切换模式吗？")) return;
+      state.mode = newMode;
+      localStorage.setItem("he_mode", newMode);
+      applyMode();
+      // The vlm-select content set differs slightly between modes (visual
+      // mode also lists click_tags that have visual_report but no nav report
+      // — e.g. when the user wiped nav results). Refresh it here.
+      refreshVlmSelect();
+      refreshJudgeSelect();
+      await loadCases();
+    });
+  });
+
+  $("model-filter").addEventListener("change", async (e) => {
+    if (state.dirty && !confirm("有未保存的改动，确认切换模型筛选吗？")) {
+      e.target.value = state.modelFilter;
+      return;
+    }
+    state.modelFilter = e.target.value;
+    localStorage.setItem("he_model_filter", state.modelFilter);
+    const prevRun = state.selectedRun;
+    refreshRunSelect();
+    refreshVlmSelect();
+    refreshJudgeSelect();
+    // Only reload if the selected run actually changed (refreshRunSelect
+    // preserves the existing selection when it survives the new filter).
+    if (state.selectedRun !== prevRun) {
+      await loadCases();
+      if (state.preview.run_id) {
+        await launchPreview();
+      }
+    }
+  });
+
+  $("run-select").addEventListener("change", async (e) => {
+    if (state.dirty && !confirm("有未保存的改动，确认切换 run 吗？")) {
+      e.target.value = state.selectedRun;
+      return;
+    }
+    state.selectedRun = e.target.value;
+    refreshVlmSelect();
+    refreshJudgeSelect();
+    await loadCases();
+    if (state.preview.run_id) {
+      await launchPreview();
+    }
+  });
+
+  $("vlm-select").addEventListener("change", async (e) => {
+    if (state.dirty && !confirm("有未保存的改动，确认切换 click_tag 吗？")) {
+      e.target.value = state.selectedVlm;
+      return;
+    }
+    state.selectedVlm = e.target.value;
+    // judge_tag list depends on click_tag (judges_by_click[click_tag]).
+    refreshJudgeSelect();
+    await loadCases();
+  });
+
+  $("judge-select").addEventListener("change", async (e) => {
+    if (state.dirty && !confirm("有未保存的改动，确认切换 Judge 吗？")) {
+      e.target.value = state.selectedJudge;
+      return;
+    }
+    state.selectedJudge = e.target.value;
+    if (state.mode === MODE_VISUAL) await loadCases();
+  });
+
+  $("launch-btn").addEventListener("click", launchPreview);
+  $("stop-btn").addEventListener("click", stopPreview);
+  $("save-btn").addEventListener("click", saveCases);
+  $("reload-frame-btn").addEventListener("click", reloadFrame);
+  $("goto-route-btn").addEventListener("click", gotoExpectedRoute);
+
+  $("filter-input").addEventListener("input", (e) => {
+    state.filter.kw = e.target.value;
+    state.visualFilter.kw = e.target.value;
+    renderCaseList();
+  });
+  // Click-mode filter buttons
+  document.querySelectorAll(".filter-box .filters.click-only button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".filter-box .filters.click-only button")
+        .forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.filter.mode = btn.dataset.filter;
+      renderCaseList();
+    });
+  });
+  // Visual-mode filter buttons
+  document.querySelectorAll(".filter-box .filters.visual-only button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".filter-box .filters.visual-only button")
+        .forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.visualFilter.mode = btn.dataset.vfilter;
+      renderCaseList();
+    });
+  });
+
+  // keyboard shortcuts
+  document.addEventListener("keydown", (e) => {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    if (state.mode === MODE_VISUAL) {
+      handleVisualKey(e);
+    } else {
+      handleClickKey(e);
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      saveCases();
+      e.preventDefault();
+    }
+  });
+
+  // warn on close with unsaved
+  window.addEventListener("beforeunload", (e) => {
+    if (state.dirty) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  });
+}
+
+function handleClickKey(e) {
+  const c = state.cases.find((x) => x.test_id === state.selectedTestId);
+  const filtered = state.cases.filter(caseMatchesFilter);
+  const idx = filtered.findIndex((x) => x.test_id === state.selectedTestId);
+  if (e.key === "j" || e.key === "ArrowDown") {
+    if (idx < filtered.length - 1) {
+      state.selectedTestId = filtered[idx + 1].test_id;
+      renderCaseList(); renderDetail();
+      e.preventDefault();
+    }
+  } else if (e.key === "k" || e.key === "ArrowUp") {
+    if (idx > 0) {
+      state.selectedTestId = filtered[idx - 1].test_id;
+      renderCaseList(); renderDetail();
+      e.preventDefault();
+    }
+  } else if (e.key === "1" || e.key === "p") {
+    if (c) { c.human_verdict = true; markDirty(); renderCaseList(); renderDetail(); }
+  } else if (e.key === "2" || e.key === "f") {
+    if (c) { c.human_verdict = false; markDirty(); renderCaseList(); renderDetail(); }
+  } else if (e.key === "0" || e.key === "x") {
+    if (c) { c.human_verdict = null; markDirty(); renderCaseList(); renderDetail(); }
+  }
+}
+
+// In visual mode the case list still supports j/k navigation, but 1-5 are
+// reserved for clicking score buttons (which require a focused dim — too
+// ambiguous to bind globally). Press 'a' to copy model scores into all
+// pairs of the current case (quick "I agree with model").
+function handleVisualKey(e) {
+  const c = state.visualCases.find((x) => x.test_id === state.selectedTestId);
+  const filtered = state.visualCases.filter(visualCaseMatchesFilter);
+  const idx = filtered.findIndex((x) => x.test_id === state.selectedTestId);
+  if (e.key === "j" || e.key === "ArrowDown") {
+    if (idx < filtered.length - 1) {
+      state.selectedTestId = filtered[idx + 1].test_id;
+      renderCaseList(); renderDetail();
+      e.preventDefault();
+    }
+  } else if (e.key === "k" || e.key === "ArrowUp") {
+    if (idx > 0) {
+      state.selectedTestId = filtered[idx - 1].test_id;
+      renderCaseList(); renderDetail();
+      e.preventDefault();
+    }
+  } else if (e.key === "a") {
+    if (!c) return;
+    if (c.model_before) copyModelScores(c, "before");
+    if (c.type !== "page_exists" && c.model_after) copyModelScores(c, "after");
+  }
+}
+
+init();
+</script>
+</body>
+</html>

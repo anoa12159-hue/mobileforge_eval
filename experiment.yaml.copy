@@ -1,0 +1,97 @@
+# DesignForge 实验配置
+# 所有可调参数集中在此文件，代码中不硬编码
+
+llm:
+  # provider: chat_api | litellm
+  #   chat_api   — 使用 Chat API，需要 APP_NAME/APP_ID/APP_KEY 环境变量
+  #   litellm — 使用 LiteLLM 统一接口，需要对应 provider 的 API key
+  provider: chat_api
+  endpoint: "http://chat-api.example.invalid/api/chat_completions"
+
+  # 模型名称（需与下方 models 中的 key 对应）
+  #   chat_api 模式:   直接使用模型名 (gpt-5.1, claude-opus-4-6, etc.)
+  #   litellm 模式: 使用 provider/model 格式 (openai/gpt-4o, anthropic/claude-sonnet-4-20250514)
+  vision_model: claude-sonnet-4     # Map 阶段 VLM 调用（须 supports_images: true）
+  text_model: claude-sonnet-4                # Reduce / Contract 纯文本推理
+  agent_model: claude-sonnet-4
+
+  # max_tokens 由模型注册表中的 max_tokens 字段控制，不再额外限制
+  max_retries: 3
+
+pipeline:
+  target_framework: react       # react | vue | nextjs
+  css_strategy: tailwind        # tailwind | css-modules | styled-components
+  max_parallel_pages: 10
+  # max_agent_iterations: 15
+  # Context management strategy for the agentic pipeline (PACF).
+  #   "full"  — v0 mode: no context management, full history every turn
+  #   "pacf"  — v1 mode: phase-aware context focusing (image policy + pruning + injection)
+  #   Or use a dict for fine-grained ablation control:
+  #     context_management:
+  #       mode: pacf
+  #       image_policy: true       # toggle image phase management
+  #       history_pruning: true    # toggle old message compression
+  #       context_injection: true  # toggle state summary injection
+  # context_management: pacf
+  todo_tool: true
+  route_hints: true
+
+  # 可选：按 ToolAgent 单独设上限（page → PageAgent；未写的角色仍用 max_agent_iterations）
+  agent_max_iterations:
+    page: 10
+    merge: 30
+    dedup: 30
+    build: 30
+
+# Tool I/O limits for Page / Merge / Build agents (token control)
+tools:
+  # Directory name segments; paths containing these are skipped by list_files / grep
+  list_files_ignore_dir_names:
+    - .designforge
+    - node_modules
+    - dist
+    - .git
+    - .vite
+  # 0 = unlimited tool return for read_file (disk always read fully)
+  read_file_max_chars: 0
+  # 0 = unlimited run_command output to the LLM
+  run_command_max_output_chars: 50000
+
+paths:
+  input_dir: ./input/mobileforge
+  output_dir: ./output/mobileforge
+
+# ------------------------------------------------------------------
+# Annotator 标注配置
+# ------------------------------------------------------------------
+annotator:
+  # VLM 标注模型（须 supports_images: true）
+  # 推荐 gemini-2.5-flash：视觉理解强、JSON 输出稳定、成本极低
+  model: gemini-2.5-flash
+
+  # Phase 1 并发数：单图描述的并行线程数（默认 8）
+  # 324 张图串行约 30-50 分钟，8 路并发可压缩到 4-6 分钟
+  workers: 8
+
+# ------------------------------------------------------------------
+# TestGen 自动化测试配置
+# ------------------------------------------------------------------
+testgen:
+  # Phase 1 (run): VLM 点击兜底模型（DOM/文本定位失败时自动 fallback）
+  # 推荐 gemini-2.5-flash：成本最低、GUI grounding 原生支持
+  fallback_model: gemini-2.5-flash
+
+  # Phase 2 (eval): VLM 视觉评估模型
+  # 推荐 gemini-2.5-pro：细节感知强、多维度评分准确
+  eval_model: gemini-2.5-pro
+
+  # Phase 2 (eval): VLM 评分并发线程数（默认 8）
+  eval_workers: 8
+
+# ------------------------------------------------------------------
+# 模型注册表已迁移到独立的 models.yaml
+# 如需覆盖个别模型的参数，可在此处添加 models 段，例如:
+#   models:
+#     claude-sonnet-4:
+#       max_tokens: 32000    # 覆盖 models.yaml 中的默认值
+# ------------------------------------------------------------------

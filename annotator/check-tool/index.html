@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MobileForge Check Tool</title>
+<style>
+:root {
+  --bg: #0b0b0e;
+  --bg-card: #16161b;
+  --bg-card-hover: #1e1e25;
+  --bg-panel: #111114;
+  --bg-input: #1a1a24;
+  --border: #27272e;
+  --border-sel: #38b2ac;
+  --border-warn: #ed8936;
+  --border-err: #f56565;
+  --border-pass: #48bb78;
+  --text: #e2e2e8;
+  --text-dim: #7a7a88;
+  --text-accent: #81e6d9;
+  --text-warn: #fbd38d;
+  --text-err: #feb2b2;
+  --text-pass: #9ae6b4;
+  --teal: #38b2ac;
+  --teal-bg: rgba(56,178,172,0.12);
+  --orange: #ed8936;
+  --orange-bg: rgba(237,137,54,0.1);
+  --red: #f56565;
+  --red-bg: rgba(245,101,101,0.1);
+  --green: #48bb78;
+  --green-bg: rgba(72,187,120,0.1);
+  --blue: #4299e1;
+  --blue-bg: rgba(66,153,225,0.1);
+  --purple: #9f7aea;
+  --purple-bg: rgba(159,122,234,0.12);
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif;background:var(--bg);color:var(--text);line-height:1.5;height:100vh;overflow:hidden}
+.layout{display:flex;height:100vh}
+
+/* ── sidebar ── */
+.sidebar{width:260px;min-width:260px;background:var(--bg-panel);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.sidebar-hdr{padding:18px 16px 12px;border-bottom:1px solid var(--border)}
+.sidebar-hdr h1{font-size:13px;font-weight:700;color:var(--text-accent);letter-spacing:1px;font-family:monospace}
+.sidebar-hdr p{font-size:11px;color:var(--text-dim);margin-top:2px}
+.sidebar-search{padding:8px 12px;border-bottom:1px solid var(--border)}
+.sidebar-search input{width:100%;padding:7px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:12px;outline:none}
+.sidebar-search input:focus{border-color:var(--teal)}
+.app-list{flex:1;overflow-y:auto;padding:6px 8px}
+.app-item{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:var(--radius);cursor:pointer;transition:background .15s;margin-bottom:2px;border:1px solid transparent}
+.app-item:hover{background:var(--bg-card-hover)}
+.app-item.active{background:var(--bg-card);border-color:var(--border-sel)}
+.app-item .name{font-size:13px;font-weight:500;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-item .badges{display:flex;gap:4px;align-items:center;flex-shrink:0}
+.badge{padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600;font-family:monospace}
+.badge-pages{background:var(--blue-bg);color:var(--blue)}
+.badge-pass{background:var(--green-bg);color:var(--green)}
+.badge-warn{background:var(--orange-bg);color:var(--orange)}
+.badge-none{background:rgba(122,122,136,.12);color:var(--text-dim)}
+
+/* ── main ── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.toolbar{display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--bg-panel)}
+.toolbar h2{font-size:16px;font-weight:700}
+.toolbar .spacer{flex:1}
+.toolbar .stats{display:flex;gap:12px;font-size:12px;font-family:monospace}
+.stat{display:flex;align-items:center;gap:4px}
+.stat-dot{width:7px;height:7px;border-radius:50%}
+.btn{padding:6px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
+.btn:hover{background:var(--bg-card-hover)}
+.btn-save{border-color:var(--teal);color:var(--teal)}
+.btn-save:hover{background:var(--teal);color:#fff}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+.tab-bar{display:flex;border-bottom:1px solid var(--border);background:var(--bg-panel);padding:0 20px}
+.tab{padding:10px 18px;font-size:13px;font-weight:600;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;user-select:none}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--text-accent);border-bottom-color:var(--teal)}
+.tab .cnt{font-size:10px;background:var(--bg-input);padding:1px 6px;border-radius:8px;margin-left:5px;font-family:monospace}
+
+.content{flex:1;overflow-y:auto;padding:20px}
+.tab-pane{display:none}
+.tab-pane.active{display:block}
+.empty-msg{text-align:center;color:var(--text-dim);padding:60px 20px;font-size:14px}
+
+/* ── page review cards ── */
+.pg-card{display:flex;gap:18px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px;transition:border-color .2s}
+.pg-card.st-pass{border-color:var(--border-pass)}
+.pg-card.st-fail{border-color:var(--border-err)}
+.pg-card.st-edited{border-color:var(--border-warn)}
+.pg-shot{width:170px;min-width:170px;display:flex;flex-direction:column;align-items:center}
+.pg-shot img{width:100%;border-radius:var(--radius);border:1px solid var(--border);cursor:zoom-in;transition:transform .2s}
+.pg-shot img:hover{transform:scale(1.02)}
+.pg-shot .fname{font-size:9px;color:var(--text-dim);margin-top:5px;font-family:monospace;text-align:center;word-break:break-all}
+.pg-fields{flex:1;min-width:0}
+.frow{display:flex;gap:10px;margin-bottom:8px}
+.frow .fgrp{flex:1;min-width:0}
+.fgrp{margin-bottom:8px}
+.flbl{font-size:10px;color:var(--text-dim);font-family:monospace;margin-bottom:2px;display:flex;align-items:center;gap:5px}
+.flbl .ed-badge{font-size:8px;background:var(--orange-bg);color:var(--orange);padding:1px 5px;border-radius:3px}
+.fval{font-size:12px;padding:5px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;min-height:28px;outline:none;transition:border-color .15s;display:block;width:100%;color:var(--text);line-height:1.4}
+.fval:focus{border-color:var(--teal)}
+.fval.edited{border-color:var(--orange);background:rgba(237,137,54,.04)}
+textarea.fval{resize:vertical;font-family:inherit;min-height:50px}
+select.fval{appearance:none;cursor:pointer;padding-right:24px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237a7a88' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;background-color:var(--bg-input)}
+
+.warn-box{display:flex;align-items:flex-start;gap:6px;padding:6px 10px;background:var(--orange-bg);border:1px solid rgba(237,137,54,.25);border-radius:6px;font-size:11px;color:var(--text-warn);margin-bottom:8px}
+.warn-box::before{content:'⚠';flex-shrink:0}
+.err-box{display:flex;align-items:flex-start;gap:6px;padding:6px 10px;background:var(--red-bg);border:1px solid rgba(245,101,101,.25);border-radius:6px;font-size:11px;color:var(--text-err);margin-bottom:8px}
+.err-box::before{content:'✗';flex-shrink:0}
+
+.del-tooltip{display:none;position:absolute;top:100%;left:0;margin-top:6px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px 12px;min-width:220px;max-height:300px;overflow-y:auto;z-index:100;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+#deletedInfo:hover .del-tooltip{display:block}
+
+.anchor-list{list-style:none}
+.anchor-item{display:flex;align-items:center;gap:6px;padding:3px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:5px;margin-bottom:3px;font-size:11px}
+.anchor-item span{flex:1;min-width:0}
+.anchor-del{color:var(--text-dim);cursor:pointer;font-size:13px;flex-shrink:0}
+.anchor-del:hover{color:var(--red)}
+.anchor-add{font-size:11px;color:var(--teal);cursor:pointer;margin-top:3px;display:inline-block}
+.anchor-add:hover{text-decoration:underline}
+
+.note-row{margin-top:6px}
+.note-input{width:100%;padding:5px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;outline:none}
+.note-input::placeholder{color:var(--text-dim)}
+.note-input:focus{border-color:var(--teal)}
+.rv-actions{display:flex;gap:6px;margin-top:8px}
+.rv-btn{padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:transparent;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s}
+.rv-btn.pass{color:var(--green);border-color:var(--green)}
+.rv-btn.pass:hover,.rv-btn.pass.on{background:var(--green);color:#fff}
+.rv-btn.fail{color:var(--red);border-color:var(--red)}
+.rv-btn.fail:hover,.rv-btn.fail.on{background:var(--red);color:#fff}
+.rv-btn.skip{color:var(--text-dim)}
+.rv-btn.skip:hover,.rv-btn.skip.on{background:var(--bg-card-hover);color:var(--text)}
+
+/* ── nav tab ── */
+.nav-section{margin-bottom:24px}
+.nav-section h3{font-size:13px;color:var(--text-dim);font-family:monospace;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.tab-vis{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;padding:8px 0}
+.tab-vis-item{display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 14px;background:var(--bg-card);border:2px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:all .15s;min-width:80px}
+.tab-vis-item:hover{border-color:var(--teal)}
+.tab-vis-item .tpos{font-size:9px;font-family:monospace;color:var(--teal);background:var(--teal-bg);padding:1px 5px;border-radius:3px}
+.tab-vis-item img{width:50px;height:85px;object-fit:cover;border-radius:4px;border:1px solid var(--border)}
+.tab-vis-item .tname{font-size:12px;font-weight:600}
+.rel-row{display:flex;align-items:center;gap:6px;margin-bottom:7px;flex-wrap:wrap}
+.rel-node{padding:6px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);font-size:11px;font-family:monospace}
+.rel-node.main{border-color:var(--teal);color:var(--text-accent)}
+.rel-node.sub{border-color:var(--blue);color:var(--blue)}
+.rel-node.overlay{border-color:var(--purple);color:var(--purple)}
+.rel-arrow{color:var(--text-dim);font-size:16px}
+.rel-trigger{font-size:10px;color:var(--text-dim);background:var(--bg-input);padding:3px 8px;border-radius:4px;border:1px solid var(--border)}
+.rel-node img{width:40px;height:65px;object-fit:cover;border-radius:3px;border:1px solid var(--border);vertical-align:middle;margin-right:6px}
+
+/* ── test case cards ── */
+.tc-group{margin-bottom:20px}
+.tc-title{font-size:13px;font-weight:700;color:var(--text-accent);margin-bottom:10px;padding-bottom:5px;border-bottom:1px solid var(--border);font-family:monospace;cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px}
+.tc-title::before{content:'▼';font-size:10px;transition:transform .2s}
+.tc-group.collapsed .tc-title::before{transform:rotate(-90deg)}
+.tc-group.collapsed .tc-body{display:none}
+.tc-card{display:flex;gap:14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:10px;align-items:flex-start;transition:border-color .2s}
+.tc-card.st-pass{border-color:var(--border-pass)}
+.tc-card.st-fail{border-color:var(--border-err)}
+.tc-shots{display:flex;gap:6px;align-items:center;flex-shrink:0}
+.tc-shots img{width:65px;height:110px;object-fit:cover;border-radius:5px;border:1px solid var(--border)}
+.tc-arr{font-size:18px;color:var(--teal)}
+.tc-fields{flex:1;min-width:0}
+.tc-id{font-size:10px;font-family:monospace;color:var(--teal);margin-bottom:4px;word-break:break-all}
+.tc-type{display:inline-block;padding:2px 7px;border-radius:4px;font-size:9px;font-weight:600;font-family:monospace;margin-bottom:6px}
+.tc-type.page_exists{background:var(--blue-bg);color:var(--blue)}
+.tc-type.tab_navigation{background:var(--teal-bg);color:var(--teal)}
+.tc-type.parent_child_navigation{background:var(--purple-bg);color:var(--purple)}
+
+/* ── modal ── */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:1000;align-items:center;justify-content:center;cursor:zoom-out}
+.modal.open{display:flex}
+.modal img{max-width:420px;max-height:85vh;border-radius:var(--radius-lg);border:1px solid var(--border);cursor:default}
+
+/* ── toast ── */
+.toast{position:fixed;bottom:20px;right:20px;background:var(--bg-card);border:1px solid var(--teal);border-radius:var(--radius);padding:10px 18px;font-size:13px;color:var(--text-accent);z-index:2000;opacity:0;transform:translateY(10px);transition:all .3s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#3a3a48}
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="sidebar">
+    <div class="sidebar-hdr">
+      <h1>CHECK TOOL</h1>
+      <p>MobileForge 数据审核</p>
+    </div>
+    <div class="sidebar-search"><input id="searchInput" type="text" placeholder="搜索应用..."></div>
+    <div class="app-list" id="appList"></div>
+  </div>
+  <div class="main">
+    <div class="toolbar" id="toolbar" style="display:none">
+      <h2 id="appTitle"></h2>
+      <div id="deletedInfo" style="display:none;position:relative;margin-left:12px"></div>
+      <div class="stats" id="statsBar"></div>
+      <div class="spacer"></div>
+      <button class="btn btn-save" id="btnSave" onclick="doSave()">保存审核</button>
+    </div>
+    <div class="tab-bar" id="tabBar" style="display:none">
+      <div class="tab active" data-tab="pages">页面审核<span class="cnt" id="cntPages"></span></div>
+      <div class="tab" data-tab="nav">导航关系<span class="cnt" id="cntNav"></span></div>
+      <div class="tab" data-tab="tests">测试用例<span class="cnt" id="cntTests"></span></div>
+    </div>
+    <div class="content" id="contentArea">
+      <div class="tab-pane active" id="pane-pages"></div>
+      <div class="tab-pane" id="pane-nav"></div>
+      <div class="tab-pane" id="pane-tests"></div>
+      <div class="empty-msg" id="emptyMsg">← 从左侧选择一个应用开始审核</div>
+    </div>
+  </div>
+</div>
+<div class="modal" id="imgModal" onclick="this.classList.remove('open')"><img id="modalImg" src="" onclick="event.stopPropagation()"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+let currentSlug = null;
+let reviewData = null;
+let editedMeta = null;
+let displayCases = null;
+let reviewState = null;
+let testCasesStale = false;
+let pendingScreenshotDeletes = [];
+
+// ── App list ──
+
+async function loadApps() {
+  const apps = await (await fetch('/api/apps')).json();
+  renderAppList(apps);
+}
+
+function renderAppList(apps) {
+  const q = $('#searchInput').value.toLowerCase();
+  const list = $('#appList');
+  list.innerHTML = '';
+  for (const a of apps) {
+    if (q && !a.app_name.toLowerCase().includes(q) && !a.slug.includes(q)) continue;
+    const el = document.createElement('div');
+    el.className = 'app-item' + (a.slug === currentSlug ? ' active' : '');
+    let badge = '<span class="badge badge-none">—</span>';
+    if (a.review_status === 'done') badge = '<span class="badge badge-pass">✓</span>';
+    else if (a.issue_count > 0) badge = `<span class="badge badge-warn">${a.issue_count}⚠</span>`;
+    else if (a.review_status === 'in_progress') badge = `<span class="badge badge-pass">${a.reviewed_count}✓</span>`;
+    const delBadge = a.deleted_screenshots?.length ? `<span class="badge" style="background:#ff555533;color:#ff5555" title="${a.deleted_screenshots.join('\n')}">-${a.deleted_screenshots.length}</span>` : '';
+    el.innerHTML = `<span class="name">${esc(a.app_name)}</span><div class="badges"><span class="badge badge-pages">${a.num_pages}p</span>${delBadge}${badge}</div>`;
+    el.onclick = () => selectApp(a.slug);
+    list.appendChild(el);
+  }
+}
+
+$('#searchInput').addEventListener('input', loadApps);
+
+// ── Select app ──
+
+async function selectApp(slug) {
+  currentSlug = slug;
+  $$('.app-item').forEach(el => el.classList.toggle('active', el.querySelector('.name')?.textContent === slug));
+  loadApps();
+  reviewData = await (await fetch(`/api/apps/${slug}/review`)).json();
+  editedMeta = JSON.parse(JSON.stringify(reviewData.metadata));
+  displayCases = reviewData.test_cases;
+  reviewState = reviewData.review_state || { pages: {}, cases: {} };
+  testCasesStale = false;
+  pendingScreenshotDeletes = [];
+  showUI();
+}
+
+function showUI() {
+  const m = editedMeta;
+  $('#toolbar').style.display = 'flex';
+  $('#tabBar').style.display = 'flex';
+  $('#emptyMsg').style.display = 'none';
+  const resumed = reviewData.has_reviewed_metadata || reviewData.has_reviewed_test_cases;
+  $('#appTitle').innerHTML = esc(m.app_name || currentSlug) + (resumed ? ' <span style="font-size:11px;color:var(--orange);font-weight:400;margin-left:8px">已加载上次审核版本</span>' : '');
+  $('#cntPages').textContent = m.pages.length;
+  $('#cntNav').textContent = (m.page_relationships || []).length;
+  $('#cntTests').textContent = displayCases ? displayCases.cases.length : 0;
+  renderDeletedInfo();
+  updateStats();
+  renderPages();
+  renderNav();
+  renderTests();
+}
+
+function renderDeletedInfo() {
+  const el = $('#deletedInfo');
+  const serverDeleted = reviewData?.deleted_screenshots || [];
+  const allDeleted = [...new Set([...serverDeleted, ...pendingScreenshotDeletes])];
+  if (!allDeleted.length) { el.style.display = 'none'; return; }
+  const saved = serverDeleted.length;
+  const unsaved = pendingScreenshotDeletes.filter(f => !serverDeleted.includes(f)).length;
+  let label = `已删除 ${allDeleted.length} 页`;
+  if (unsaved > 0) label += ` (${unsaved} 未保存)`;
+  el.style.display = 'inline-block';
+  el.innerHTML = `<span style="background:#ff555522;color:#ff5555;padding:2px 10px;border-radius:12px;font-size:11px;cursor:default;border:1px solid #ff555544">${label}</span>
+    <div class="del-tooltip">${allDeleted.map(f =>
+      `<div style="padding:2px 0;font-size:11px;${pendingScreenshotDeletes.includes(f) && !serverDeleted.includes(f) ? 'color:var(--orange)' : ''}">${esc(f)}${pendingScreenshotDeletes.includes(f) && !serverDeleted.includes(f) ? ' <i>(未保存)</i>' : ''}</div>`
+    ).join('')}</div>`;
+}
+
+function updateStats() {
+  const ps = reviewState.pages || {};
+  const cs = reviewState.cases || {};
+  const pageNames = new Set((editedMeta?.pages || []).map(p => p.page_name));
+  const caseIds = new Set((displayCases?.cases || []).map(c => c.test_id));
+
+  let pass = 0, fail = 0;
+  for (const [k, v] of Object.entries(ps)) {
+    if (!pageNames.has(k)) continue;
+    if (v.status === 'pass') pass++;
+    else if (v.status === 'fail') fail++;
+  }
+  for (const [k, v] of Object.entries(cs)) {
+    if (!caseIds.has(k)) continue;
+    if (v.status === 'pass') pass++;
+    else if (v.status === 'fail') fail++;
+  }
+
+  const total = pageNames.size + caseIds.size;
+  const pending = total - pass - fail;
+  $('#statsBar').innerHTML = `
+    <div class="stat"><div class="stat-dot" style="background:var(--green)"></div>通过 ${pass}</div>
+    <div class="stat"><div class="stat-dot" style="background:var(--red)"></div>问题 ${fail}</div>
+    <div class="stat"><div class="stat-dot" style="background:var(--text-dim)"></div>待审 ${pending}</div>`;
+}
+
+// ── Tabs ──
+
+$$('.tab').forEach(t => t.addEventListener('click', async () => {
+  $$('.tab').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  $$('.tab-pane').forEach(p => p.classList.remove('active'));
+  const tab = t.dataset.tab;
+  $(`#pane-${tab}`).classList.add('active');
+  if (editedMeta) {
+    if (tab === 'nav') renderNav();
+    else if (tab === 'tests') {
+      if (testCasesStale) await regenerateTestCases();
+      renderTests();
+    }
+  }
+}));
+
+// ── Image helpers ──
+
+function imgUrl(name) { return `/api/apps/${currentSlug}/image?name=${encodeURIComponent(name)}`; }
+function openModal(src) { $('#modalImg').src = src; $('#imgModal').classList.add('open'); }
+
+function screenshotForPage(pageName) {
+  const pg = editedMeta.pages.find(p => p.page_name === pageName);
+  return pg?.screenshot || '';
+}
+
+// ── Render pages tab ──
+
+function _sortPageIndices(pages, tabStruct) {
+  const nameToIdx = Object.fromEntries(pages.map((p, i) => [p.page_name, i]));
+  const childrenOf = {};
+  for (let i = 0; i < pages.length; i++) {
+    const parent = pages[i].parent_page;
+    if (parent) (childrenOf[parent] = childrenOf[parent] || []).push(i);
+  }
+
+  const tabPos = (pg) => {
+    const idx = tabStruct.indexOf(pg.page_name);
+    if (idx >= 0) return idx;
+    const tp = pg.structural_features?.tab_position;
+    return tp != null ? tp - 1 : 9999;
+  };
+
+  const roots = [];
+  for (let i = 0; i < pages.length; i++) {
+    if (!pages[i].parent_page) roots.push(i);
+  }
+  roots.sort((a, b) => tabPos(pages[a]) - tabPos(pages[b]));
+
+  const result = [];
+  const visited = new Set();
+  function walk(idx, depth) {
+    if (visited.has(idx)) return;
+    visited.add(idx);
+    result.push(idx);
+    const children = childrenOf[pages[idx].page_name] || [];
+    children.sort((a, b) => tabPos(pages[a]) - tabPos(pages[b]));
+    for (const ci of children) walk(ci, depth + 1);
+  }
+  for (const ri of roots) walk(ri, 0);
+  for (let i = 0; i < pages.length; i++) {
+    if (!visited.has(i)) result.push(i);
+  }
+  return result;
+}
+
+function renderPages() {
+  const pane = $('#pane-pages');
+  pane.innerHTML = '';
+  const pages = editedMeta.pages;
+  const issueMap = buildIssueMap('metadata');
+  const tabStruct = editedMeta.tab_structure || [];
+
+  const sortedIndices = _sortPageIndices(pages, tabStruct);
+  for (const i of sortedIndices) {
+    const pg = pages[i];
+    const pn = pg.page_name;
+    const st = reviewState.pages?.[pn] || {};
+    const pgIssues = (issueMap[`page:${pn}`] || []).concat(issueMap[`tab_structure`] || []);
+
+    const card = document.createElement('div');
+    const isChild = !!pg.parent_page;
+    card.className = 'pg-card' + (st.status === 'pass' ? ' st-pass' : st.status === 'fail' ? ' st-fail' : '');
+    if (isChild) card.style.cssText = 'margin-left:24px;border-left:3px solid var(--accent);';
+    card.id = `pg-${pn}`;
+
+    const sf = pg.structural_features || {};
+    const anchorsHtml = (pg.visual_anchors || []).map((a, ai) =>
+      `<li class="anchor-item"><span contenteditable="true" data-field="pages[${i}].visual_anchors[${ai}]">${esc(a)}</span><span class="anchor-del" onclick="delAnchor(${i},${ai})">×</span></li>`
+    ).join('');
+
+    const issueHtml = pgIssues.map(iss =>
+      `<div class="${iss.severity === 'error' ? 'err-box' : 'warn-box'}">${esc(iss.message)}</div>`
+    ).join('');
+
+    card.innerHTML = `
+      <div class="pg-shot" style="position:relative">
+        ${pg.screenshot ? `<img src="${imgUrl(pg.screenshot)}" onclick="openModal(this.src)" loading="lazy">` : '<div style="width:100%;height:200px;background:var(--bg-input);border-radius:var(--radius);display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:11px">无截图</div>'}
+        <div class="fname">${esc(pg.screenshot || '')}</div>
+        <button class="del-page-btn" data-page="${esc(pn)}" title="删除此页面及关联关系"
+          style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.55);color:#ff5555;border:none;border-radius:50%;width:24px;height:24px;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:.7;transition:opacity .15s"
+          onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='.7'">×</button>
+      </div>
+      <div class="pg-fields">
+        <div class="frow">
+          <div class="fgrp"><div class="flbl">page_name</div><input class="fval" value="${esc(pg.page_name)}" data-path="pages[${i}].page_name"></div>
+          <div class="fgrp"><div class="flbl">page_type</div><select class="fval" data-path="pages[${i}].page_type"><option ${pg.page_type==='main_page'?'selected':''}>main_page</option><option ${pg.page_type==='sub_tab'?'selected':''}>sub_tab</option><option ${pg.page_type==='sub_page'?'selected':''}>sub_page</option><option ${pg.page_type==='overlay'?'selected':''}>overlay</option></select></div>
+          <div class="fgrp"><div class="flbl">tab_position</div><input class="fval" value="${sf.tab_position ?? ''}" data-path="pages[${i}].structural_features.tab_position" style="width:60px"></div>
+        </div>
+        ${pg.parent_page !== undefined || pg.page_type !== 'main_page' ? `<div class="frow"><div class="fgrp"><div class="flbl">parent_page</div><input class="fval" value="${esc(pg.parent_page||'')}" data-path="pages[${i}].parent_page" placeholder="填写父页面 page_name"></div><div class="fgrp"><div class="flbl">trigger</div><input class="fval" value="${esc(pg.trigger||'')}" data-path="pages[${i}].trigger" placeholder="触发操作描述"></div></div>` : ''}
+        ${issueHtml}
+        <div class="fgrp"><div class="flbl">description</div><textarea class="fval" data-path="pages[${i}].description">${esc(pg.description||'')}</textarea></div>
+        <div class="fgrp">
+          <div class="flbl">visual_anchors</div>
+          <ul class="anchor-list" id="anchors-${i}">${anchorsHtml}</ul>
+          <span class="anchor-add" onclick="addAnchor(${i})">+ 添加</span>
+        </div>
+        <div class="frow">
+          <div class="fgrp"><div class="flbl">has_tab_bar</div><select class="fval" data-path="pages[${i}].structural_features.has_tab_bar"><option ${sf.has_tab_bar?'selected':''}>true</option><option ${!sf.has_tab_bar?'selected':''}>false</option></select></div>
+          <div class="fgrp"><div class="flbl">has_search_bar</div><select class="fval" data-path="pages[${i}].structural_features.has_search_bar"><option ${sf.has_search_bar?'selected':''}>true</option><option ${!sf.has_search_bar?'selected':''}>false</option></select></div>
+          <div class="fgrp"><div class="flbl">has_header</div><select class="fval" data-path="pages[${i}].structural_features.has_header"><option ${sf.has_header?'selected':''}>true</option><option ${!sf.has_header?'selected':''}>false</option></select></div>
+          <div class="fgrp"><div class="flbl">primary_layout</div><select class="fval" data-path="pages[${i}].structural_features.primary_layout"><option ${sf.primary_layout==='vertical_scroll'?'selected':''}>vertical_scroll</option><option ${sf.primary_layout==='list'?'selected':''}>list</option><option ${sf.primary_layout==='card'?'selected':''}>card</option><option ${sf.primary_layout==='bottom_sheet'?'selected':''}>bottom_sheet</option><option ${sf.primary_layout==='grid'?'selected':''}>grid</option></select></div>
+        </div>
+        <div class="note-row"><input class="note-input" placeholder="添加审核备注..." value="${esc(st.note||'')}" data-note="page:${pn}"></div>
+        <div class="rv-actions">
+          <button class="rv-btn pass${st.status==='pass'?' on':''}" onclick="setReview('pages','${pn}','pass',this)">✓ 通过</button>
+          <button class="rv-btn fail${st.status==='fail'?' on':''}" onclick="setReview('pages','${pn}','fail',this)">✗ 有问题</button>
+          <button class="rv-btn skip${st.status==='skip'?' on':''}" onclick="setReview('pages','${pn}','skip',this)">跳过</button>
+        </div>
+      </div>`;
+    pane.appendChild(card);
+  }
+
+  pane.querySelectorAll('.fval').forEach(el => {
+    el.addEventListener('change', () => applyEdit(el));
+    el.addEventListener('input', () => { if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') markEdited(el); });
+  });
+  pane.querySelectorAll('.note-input').forEach(el => {
+    el.addEventListener('change', () => {
+      const key = el.dataset.note;
+      const [scope, name] = key.split(':');
+      if (!reviewState[scope]) reviewState[scope] = {};
+      if (!reviewState[scope][name]) reviewState[scope][name] = {};
+      reviewState[scope][name].note = el.value;
+    });
+  });
+  pane.querySelectorAll('.anchor-item [contenteditable]').forEach(el => {
+    el.addEventListener('blur', () => applyEdit(el));
+  });
+  pane.querySelectorAll('.del-page-btn').forEach(el => {
+    el.addEventListener('click', () => deletePage(el.dataset.page));
+  });
+}
+
+// ── Render nav tab ──
+
+function renderNav() {
+  const pane = $('#pane-nav');
+  pane.innerHTML = '';
+  const tabStruct = editedMeta.tab_structure || [];
+  const rels = editedMeta.page_relationships || [];
+
+  const mainPages = editedMeta.pages.filter(p => p.page_type === 'main_page');
+  const allPageNames = editedMeta.pages.map(p => p.page_name);
+
+  const posCount = {};
+  for (const p of mainPages) {
+    const tp = p.structural_features?.tab_position;
+    if (tp != null) posCount[tp] = (posCount[tp] || 0) + 1;
+  }
+  const conflictPages = new Set();
+  for (const p of mainPages) {
+    const tp = p.structural_features?.tab_position;
+    if (tp != null && posCount[tp] > 1) conflictPages.add(p.page_name);
+  }
+  const orphanMain = mainPages.filter(p => {
+    const tp = p.structural_features?.tab_position;
+    return tp != null && !tabStruct.includes(p.page_name);
+  });
+
+  let html = '<div class="nav-section"><h3>tab_structure — 底部导航栏</h3>'
+    + '<div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">为每个 Tab 选择对应的 page_name（仅列出 main_page 类型的页面）</div>';
+
+  if (orphanMain.length) {
+    html += '<div class="warn-box" style="margin-bottom:10px">以下 main_page 有 tab_position 但不在 tab_structure 中: '
+      + orphanMain.map(p => `<b>${esc(p.page_name)}</b> (pos=${p.structural_features.tab_position})`).join(', ')
+      + '</div>';
+  }
+
+  html += '<div class="tab-vis">';
+  for (let i = 0; i < tabStruct.length; i++) {
+    const name = tabStruct[i];
+    const ss = screenshotForPage(name);
+    const isValid = allPageNames.includes(name);
+    const hasConflict = conflictPages.has(name);
+    const tabIdx = i + 1;
+    const candidates = mainPages.filter(p => {
+      const tp = p.structural_features?.tab_position;
+      return tp == null || tp === tabIdx;
+    });
+    const opts = candidates.map(p => {
+      return `<option value="${esc(p.page_name)}" ${p.page_name === name ? 'selected' : ''}>${esc(p.page_name)}</option>`;
+    }).join('');
+    html += `<div class="tab-vis-item" ${hasConflict ? 'style="border:1px solid var(--text-err);border-radius:6px;padding:4px"' : ''}>
+      <span class="tpos">#${i+1}</span>
+      <div style="cursor:pointer" onclick="openModal(imgUrl('${esc(ss)}'))">
+        ${ss ? `<img src="${imgUrl(ss)}" loading="lazy">` : '<div style="width:50px;height:85px;background:var(--bg-input);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:var(--text-dim)">无截图</div>'}
+      </div>
+      <select class="fval tab-sel" data-tab-idx="${i}" style="width:110px;font-size:10px;padding:2px 4px${hasConflict ? ';border-color:var(--text-err)' : ''}"
+        onchange="editTabStructure(${i}, this.value)">
+        ${!isValid ? `<option value="${esc(name)}" selected style="color:#f55">${esc(name)} ⚠️</option>` : ''}
+        ${opts}
+      </select>
+      ${hasConflict ? '<div style="font-size:9px;color:var(--text-err)">tab_position 冲突</div>' : ''}
+      <span class="anchor-del" onclick="removeTab(${i})" title="删除此 Tab" style="margin-top:2px">×</span>
+    </div>`;
+  }
+  html += `<div class="tab-vis-item" style="cursor:pointer;opacity:.5;justify-content:center" onclick="addTab()">
+      <div style="width:50px;height:85px;background:var(--bg-input);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--text-dim)">+</div>
+      <span class="tname" style="font-size:10px">添加 Tab</span>
+    </div>`;
+  html += '</div></div>';
+
+  const pageMap = Object.fromEntries(editedMeta.pages.map(p => [p.page_name, p]));
+  const tabPos = (name) => {
+    const idx = tabStruct.indexOf(name);
+    if (idx >= 0) return idx;
+    const tp = pageMap[name]?.structural_features?.tab_position;
+    return tp != null ? tp - 1 : 9999;
+  };
+
+  // Detect same-tab sibling pages missing relationships
+  const tabLikePages = editedMeta.pages.filter(p => p.page_type === 'main_page' || p.page_type === 'sub_tab');
+  const posBuckets = {};
+  for (const p of tabLikePages) {
+    const tp = p.structural_features?.tab_position;
+    if (tp != null) (posBuckets[tp] = posBuckets[tp] || []).push(p.page_name);
+  }
+  const relSet = new Set(rels.map(r => `${r.parent}|${r.page}`));
+  const missingPairs = [];
+  for (const [tp, names] of Object.entries(posBuckets)) {
+    if (names.length < 2) continue;
+    const primary = names.find(n => tabStruct.includes(n)) || names[0];
+    for (const name of names) {
+      if (name === primary) continue;
+      const hasRel = relSet.has(`${primary}|${name}`) || relSet.has(`${name}|${primary}`);
+      if (!hasRel) {
+        missingPairs.push({ parent: primary, page: name, tab_position: Number(tp) });
+      }
+    }
+  }
+
+  if (missingPairs.length) {
+    html += '<div class="nav-section"><h3>未关联的同 Tab 页面</h3>'
+      + '<div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">以下 main_page 共享相同 tab_position，但缺少 page_relationships 记录。添加关系后保存可生成导航测试用例。</div>';
+    for (const pair of missingPairs) {
+      const parentSs = pageMap[pair.parent]?.screenshot || '';
+      const childSs = pageMap[pair.page]?.screenshot || '';
+      html += `<div class="rel-row" style="background:var(--bg-input);border-radius:var(--radius-lg);padding:10px;margin-bottom:8px;border:1px dashed var(--orange)">
+        <div class="rel-node main" style="min-width:60px">
+          ${parentSs ? `<img src="${imgUrl(parentSs)}" onclick="openModal(imgUrl('${esc(parentSs)}'))" loading="lazy">` : ''}
+          <div style="font-size:10px">${esc(pair.parent)}</div>
+        </div>
+        <span class="rel-arrow" style="color:var(--orange)">⇄</span>
+        <div class="rel-node main" style="min-width:60px">
+          ${childSs ? `<img src="${imgUrl(childSs)}" onclick="openModal(imgUrl('${esc(childSs)}'))" loading="lazy">` : ''}
+          <div style="font-size:10px">${esc(pair.page)}</div>
+        </div>
+        <div style="flex:1;font-size:11px;color:var(--text-dim);padding:0 8px">
+          Tab #${pair.tab_position} 下的同级页面
+          ${pageMap[pair.page]?.page_type === 'main_page' ? '<br><span style="color:var(--orange)">page_type 将改为 sub_tab</span>' : ''}
+        </div>
+        <button class="rv-btn pass" onclick="addSiblingRelationship('${esc(pair.parent)}','${esc(pair.page)}')" style="white-space:nowrap">+ 添加关系</button>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  const sortedIndices = rels.map((_, i) => i).sort((a, b) => {
+    const posA = tabPos(rels[a].parent);
+    const posB = tabPos(rels[b].parent);
+    if (posA !== posB) return posA - posB;
+    return a - b;
+  });
+
+  html += '<div class="nav-section"><h3>page_relationships — 父子页面导航</h3>'
+    + '<div style="font-size:11px;color:var(--text-dim);margin-bottom:10px">按父页面的 tab_position 排序</div>'
+    + '<div class="rel-graph">';
+  let lastParent = null;
+  for (const ri of sortedIndices) {
+    const r = rels[ri];
+    const parentPg = pageMap[r.parent];
+    const childPg = pageMap[r.page];
+    const childType = childPg?.page_type || 'sub';
+    const nodeClass = childType === 'overlay' ? 'overlay' : 'sub';
+    const parentSs = parentPg?.screenshot || '';
+    const childSs = childPg?.screenshot || '';
+
+    if (r.parent !== lastParent) {
+      const pos = tabStruct.indexOf(r.parent);
+      const posLabel = pos >= 0 ? ` (Tab #${pos+1})` : '';
+      html += `<div style="margin-top:${lastParent ? '14' : '0'}px;padding:4px 0;font-size:11px;color:var(--accent);border-bottom:1px solid var(--border)">${esc(r.parent)}${posLabel}</div>`;
+      lastParent = r.parent;
+    }
+
+    html += `<div class="rel-row">
+      <div class="rel-node main">${parentSs ? `<img src="${imgUrl(parentSs)}" onclick="openModal(imgUrl('${esc(parentSs)}'))" loading="lazy">` : ''}<input id="rel-parent-${ri}" class="fval" value="${esc(r.parent)}" onchange="editRelParent(${ri})" style="width:100px;display:inline;font-size:11px;padding:3px 6px"></div>
+      <span class="rel-arrow">→</span>
+      <div class="rel-node ${nodeClass}">${childSs ? `<img src="${imgUrl(childSs)}" onclick="openModal(imgUrl('${esc(childSs)}'))" loading="lazy">` : ''}${esc(r.page)}</div>
+      <input id="rel-trigger-${ri}" class="fval" value="${esc(r.trigger)}" onchange="editRelTrigger(${ri})" style="flex:1;min-width:120px;font-size:11px;padding:3px 8px" placeholder="trigger 描述">
+      <span class="anchor-del" onclick="delRelationship(${ri})" title="删除此关系">×</span>
+    </div>`;
+  }
+  html += '</div></div>';
+  pane.innerHTML = html;
+}
+
+// ── Render tests tab ──
+
+const tcGroupCollapsed = {};
+
+function tcSortKey(tc) {
+  const tabStruct = editedMeta?.tab_structure || [];
+  const pageMap = Object.fromEntries((editedMeta?.pages || []).map(p => [p.page_name, p]));
+
+  const getPos = (name) => {
+    const idx = tabStruct.indexOf(name);
+    if (idx >= 0) return idx;
+    const tp = pageMap[name]?.structural_features?.tab_position;
+    return tp != null ? tp - 1 : 9999;
+  };
+
+  if (tc.type === 'page_exists') {
+    return getPos(tc.from_page?.page_name);
+  }
+  if (tc.type === 'parent_child_navigation') {
+    return getPos(tc.from_page?.page_name) * 10000 + getPos(tc.to_page?.page_name);
+  }
+  return 0;
+}
+
+function renderTests() {
+  const pane = $('#pane-tests');
+  pane.innerHTML = '';
+  if (!displayCases) { pane.innerHTML = '<div class="empty-msg">此应用没有测试用例数据</div>'; return; }
+
+  if (testCasesStale) {
+    pane.innerHTML = '<div class="empty-msg">metadata 已修改，测试用例需要重新生成...<br>正在生成中</div>';
+    return;
+  }
+
+  const cases = displayCases.cases;
+  const groups = {};
+  for (const c of cases) {
+    (groups[c.type] = groups[c.type] || []).push(c);
+  }
+
+  for (const type of ['page_exists', 'parent_child_navigation']) {
+    if (groups[type]) groups[type].sort((a, b) => tcSortKey(a) - tcSortKey(b));
+  }
+
+  const issueMap = buildIssueMap('test_case');
+  const order = ['page_exists', 'tab_navigation', 'parent_child_navigation'];
+
+  const staleHint = reviewData?.has_reviewed_metadata ? '' :
+    '<div class="warn-box" style="margin-bottom:14px">测试用例由 testgen 根据 metadata 自动生成。修改 metadata 后保存，测试用例将自动重新生成。</div>';
+  pane.insertAdjacentHTML('beforeend', staleHint);
+
+  for (const type of order) {
+    const list = groups[type];
+    if (!list) continue;
+    const grp = document.createElement('div');
+    grp.className = 'tc-group' + (tcGroupCollapsed[type] ? ' collapsed' : '');
+
+    const titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display:flex;align-items:center;gap:8px';
+    const title = document.createElement('div');
+    title.className = 'tc-title';
+    title.style.flex = '1';
+    title.textContent = `${type} (${list.length})`;
+    title.addEventListener('click', () => {
+      tcGroupCollapsed[type] = !tcGroupCollapsed[type];
+      grp.classList.toggle('collapsed');
+    });
+    titleRow.appendChild(title);
+    if (type === 'page_exists' || type === 'tab_navigation') {
+      const passAllBtn = document.createElement('button');
+      passAllBtn.className = 'rv-btn pass';
+      passAllBtn.style.cssText = 'font-size:10px;padding:2px 10px;white-space:nowrap';
+      passAllBtn.textContent = '✓ 全部通过';
+      passAllBtn.addEventListener('click', () => {
+        for (const tc of list) {
+          if (!reviewState.cases) reviewState.cases = {};
+          if (!reviewState.cases[tc.test_id]) reviewState.cases[tc.test_id] = {};
+          reviewState.cases[tc.test_id].status = 'pass';
+        }
+        renderTests();
+        updateStats();
+      });
+      titleRow.appendChild(passAllBtn);
+    }
+    grp.appendChild(titleRow);
+
+    const body = document.createElement('div');
+    body.className = 'tc-body';
+
+    for (const tc of list) {
+      const tid = tc.test_id;
+      const st = reviewState.cases?.[tid] || {};
+      const tcIssues = issueMap[`case:${tid}`] || [];
+      const fromSs = tc.from_page?.reference_screenshot || '';
+      const toSs = tc.to_page?.reference_screenshot || '';
+      const showArrow = type !== 'page_exists';
+
+      const card = document.createElement('div');
+      card.className = 'tc-card' + (st.status === 'pass' ? ' st-pass' : st.status === 'fail' ? ' st-fail' : '');
+
+      const issueHtml = tcIssues.map(iss =>
+        `<div class="${iss.severity === 'error' ? 'err-box' : 'warn-box'}">${esc(iss.message)}</div>`
+      ).join('');
+
+      card.innerHTML = `
+        <div class="tc-shots">
+          ${fromSs ? `<img src="${imgUrl(fromSs)}" onclick="openModal(this.src)" loading="lazy">` : '<div style="width:65px;height:110px;background:var(--bg-input);border-radius:5px"></div>'}
+          ${showArrow ? `<span class="tc-arr">→</span>${toSs ? `<img src="${imgUrl(toSs)}" onclick="openModal(this.src)" loading="lazy">` : '<div style="width:65px;height:110px;background:var(--bg-input);border-radius:5px"></div>'}` : ''}
+        </div>
+        <div class="tc-fields">
+          <div class="tc-id">${esc(tid)}</div>
+          <span class="tc-type ${type}">${type}</span>
+          ${issueHtml}
+          <div class="frow" style="margin-top:6px">
+            <div class="fgrp"><div class="flbl">from_page</div><div class="fval" style="cursor:default">${esc(tc.from_page?.page_name||'')}</div></div>
+            ${showArrow ? `<div class="fgrp"><div class="flbl">to_page</div><div class="fval" style="cursor:default">${esc(tc.to_page?.page_name||'')}</div></div>` : ''}
+            <div class="fgrp"><div class="flbl">strategy</div><div class="fval" style="cursor:default">${esc(tc.action?.strategy||'')}</div></div>
+          </div>
+          ${type === 'tab_navigation' ? `<div class="frow"><div class="fgrp"><div class="flbl">tab_position</div><div class="fval" style="cursor:default;width:70px">${tc.action?.tab_position ?? ''}</div></div></div>` : ''}
+          <div class="fgrp"><div class="flbl">action</div><div class="fval" style="cursor:default">${esc(tc.action?.description||'')}</div></div>
+          <div class="note-row"><input class="note-input" placeholder="添加审核备注..." value="${esc(st.note||'')}" data-note="cases:${tid}"></div>
+          <div class="rv-actions">
+            <button class="rv-btn pass${st.status==='pass'?' on':''}" onclick="setReview('cases','${esc(tid)}','pass',this)">✓ 通过</button>
+            <button class="rv-btn fail${st.status==='fail'?' on':''}" onclick="setReview('cases','${esc(tid)}','fail',this)">✗ 有问题</button>
+            <button class="rv-btn skip${st.status==='skip'?' on':''}" onclick="setReview('cases','${esc(tid)}','skip',this)">跳过</button>
+          </div>
+        </div>`;
+      body.appendChild(card);
+    }
+    grp.appendChild(body);
+    pane.appendChild(grp);
+  }
+
+  pane.querySelectorAll('.note-input').forEach(el => {
+    el.addEventListener('change', () => {
+      const [scope, name] = el.dataset.note.split(':');
+      if (!reviewState[scope]) reviewState[scope] = {};
+      if (!reviewState[scope][name]) reviewState[scope][name] = {};
+      reviewState[scope][name].note = el.value;
+    });
+  });
+}
+
+// ── Data editing ──
+
+function setNestedValue(obj, path, value) {
+  const parts = path.replace(/\]/g, '').split(/[.\[]/);
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const k = isNaN(parts[i]) ? parts[i] : parseInt(parts[i]);
+    if (cur[k] === undefined || cur[k] === null) cur[k] = {};
+    cur = cur[k];
+  }
+  const last = isNaN(parts[parts.length-1]) ? parts[parts.length-1] : parseInt(parts[parts.length-1]);
+  if (value === 'true') value = true;
+  else if (value === 'false') value = false;
+  else if (value === '' || value === 'null') value = null;
+  else if (!isNaN(value) && value !== '') value = Number(value);
+  cur[last] = value;
+}
+
+function applyEdit(el) {
+  const path = el.dataset?.path || el.dataset?.field;
+  if (!path) return;
+  const val = el.tagName === 'SELECT' ? el.value : (el.contentEditable === 'true' ? el.textContent : el.value);
+  setNestedValue(editedMeta, path, val);
+  markEdited(el);
+  syncRelationshipsFromPages();
+
+  testCasesStale = true;
+}
+
+function rebuildTabStructureFromPages() {
+  const entries = [];
+  for (const pg of editedMeta.pages) {
+    if (pg.page_type !== 'main_page') continue;
+    const tp = pg.structural_features?.tab_position;
+    if (tp != null && tp > 0) entries.push({ name: pg.page_name, pos: tp });
+  }
+  entries.sort((a, b) => a.pos - b.pos);
+  editedMeta.tab_structure = entries.map(e => e.name);
+  renderNav();
+}
+
+function markEdited(el) {
+  el.classList.add('edited');
+  const lbl = el.closest('.fgrp')?.querySelector('.flbl');
+  if (lbl && !lbl.querySelector('.ed-badge')) {
+    const b = document.createElement('span');
+    b.className = 'ed-badge';
+    b.textContent = '已编辑';
+    lbl.appendChild(b);
+  }
+}
+
+function setReview(scope, key, status, btn) {
+  if (!reviewState[scope]) reviewState[scope] = {};
+  if (!reviewState[scope][key]) reviewState[scope][key] = {};
+  reviewState[scope][key].status = status;
+  const actions = btn.parentElement;
+  actions.querySelectorAll('.rv-btn').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  const card = btn.closest('.pg-card,.tc-card');
+  if (card) {
+    card.classList.remove('st-pass', 'st-fail');
+    if (status === 'pass') card.classList.add('st-pass');
+    if (status === 'fail') card.classList.add('st-fail');
+  }
+  updateStats();
+}
+
+function delAnchor(pageIdx, anchorIdx) {
+  editedMeta.pages[pageIdx].visual_anchors.splice(anchorIdx, 1);
+  renderPages();
+}
+
+function addAnchor(pageIdx) {
+  if (!editedMeta.pages[pageIdx].visual_anchors) editedMeta.pages[pageIdx].visual_anchors = [];
+  editedMeta.pages[pageIdx].visual_anchors.push('新锚点');
+  renderPages();
+}
+
+// ── Cross-tab sync: pages → page_relationships ──
+
+function editTabStructure(idx, newValue) {
+  const tabs = editedMeta.tab_structure || [];
+  if (idx < 0 || idx >= tabs.length) return;
+  const oldValue = tabs[idx];
+  tabs[idx] = newValue;
+
+  if (oldValue !== newValue) {
+    const oldPg = editedMeta.pages.find(p => p.page_name === oldValue);
+    if (oldPg?.structural_features && !tabs.includes(oldValue)) {
+      oldPg.structural_features.tab_position = null;
+    }
+  }
+
+  const newPg = editedMeta.pages.find(p => p.page_name === newValue);
+  if (newPg) {
+    const sf = newPg.structural_features || (newPg.structural_features = {});
+    sf.tab_position = idx + 1;
+  }
+
+  testCasesStale = true;
+  renderNav();
+  toast(`Tab #${idx+1}: ${oldValue} → ${newValue}`);
+}
+
+function removeTab(idx) {
+  const tabs = editedMeta.tab_structure || [];
+  if (idx < 0 || idx >= tabs.length) return;
+  const removed = tabs.splice(idx, 1)[0];
+
+  tabs.forEach((name, i) => {
+    const pg = editedMeta.pages.find(p => p.page_name === name);
+    if (pg?.structural_features) pg.structural_features.tab_position = i + 1;
+  });
+
+  testCasesStale = true;
+  renderNav();
+  toast(`已移除 Tab: ${removed}`);
+}
+
+function addTab() {
+  const tabs = editedMeta.tab_structure || (editedMeta.tab_structure = []);
+  const mainPages = editedMeta.pages.filter(p => p.page_type === 'main_page');
+  const unused = mainPages.find(p => !tabs.includes(p.page_name));
+  if (!unused) { toast('没有可用的 main_page 了'); return; }
+
+  tabs.push(unused.page_name);
+  const sf = unused.structural_features || (unused.structural_features = {});
+  sf.tab_position = tabs.length;
+
+  testCasesStale = true;
+  renderNav();
+  toast(`已添加 Tab #${tabs.length}: ${unused.page_name}`);
+}
+
+function syncRelationshipsFromPages() {
+  if (!editedMeta.page_relationships) editedMeta.page_relationships = [];
+  const rels = editedMeta.page_relationships;
+  const seen = new Set();
+  for (const pg of editedMeta.pages) {
+    if (!pg.parent_page) continue;
+    const first = rels.find(r => r.page === pg.page_name);
+    if (first) {
+      first.parent = pg.parent_page;
+      first.trigger = pg.trigger || '';
+    } else {
+      rels.push({ page: pg.page_name, parent: pg.parent_page, trigger: pg.trigger || '' });
+    }
+    seen.add(pg.page_name);
+  }
+  // Remove relationships for pages whose parent_page was cleared, and deduplicate
+  const kept = new Set();
+  editedMeta.page_relationships = rels.filter(r => {
+    if (kept.has(r.page)) return false;
+    kept.add(r.page);
+    const pg = editedMeta.pages.find(p => p.page_name === r.page);
+    if (pg && !pg.parent_page) return false;
+    return true;
+  });
+  renderNav();
+}
+
+function syncPagesFromRelationship(childName, field, value) {
+  const pg = editedMeta.pages.find(p => p.page_name === childName);
+  if (pg) pg[field] = value;
+}
+
+function editRelTrigger(relIdx) {
+  const rels = editedMeta.page_relationships;
+  if (!rels?.[relIdx]) return;
+  const r = rels[relIdx];
+  const input = $(`#rel-trigger-${relIdx}`);
+  if (!input) return;
+  r.trigger = input.value;
+  syncPagesFromRelationship(r.page, 'trigger', input.value);
+  testCasesStale = true;
+  toast('trigger 已同步，切换到测试用例 Tab 可预览重新生成的用例');
+}
+
+function editRelParent(relIdx) {
+  const rels = editedMeta.page_relationships;
+  if (!rels?.[relIdx]) return;
+  const r = rels[relIdx];
+  const input = $(`#rel-parent-${relIdx}`);
+  if (!input) return;
+  r.parent = input.value;
+  syncPagesFromRelationship(r.page, 'parent_page', input.value);
+  testCasesStale = true;
+  toast('parent 已同步，切换到测试用例 Tab 可预览重新生成的用例');
+}
+
+function delRelationship(relIdx) {
+  const rels = editedMeta.page_relationships;
+  if (!rels?.[relIdx]) return;
+  const r = rels[relIdx];
+  const pg = editedMeta.pages.find(p => p.page_name === r.page);
+  if (pg) { delete pg.parent_page; delete pg.trigger; }
+  rels.splice(relIdx, 1);
+  testCasesStale = true;
+  renderNav();
+  renderPages();
+  toast('关系已删除');
+}
+
+function deletePage(pageName) {
+  if (!confirm(`确认删除页面 "${pageName}" 吗？\n\n将同时移除：\n• 该页面的所有数据\n• 涉及该页面的所有导航关系\n• tab_structure 中的引用\n• 子页面的 parent_page 引用`)) return;
+
+  const pages = editedMeta.pages || [];
+  const idx = pages.findIndex(p => p.page_name === pageName);
+  if (idx < 0) { toast('页面未找到'); return; }
+  const removed = pages[idx];
+  if (removed.screenshot) pendingScreenshotDeletes.push(removed.screenshot);
+  pages.splice(idx, 1);
+
+  if (editedMeta.page_relationships) {
+    const orphanedChildren = editedMeta.page_relationships
+      .filter(r => r.parent === pageName)
+      .map(r => r.page);
+    editedMeta.page_relationships = editedMeta.page_relationships
+      .filter(r => r.parent !== pageName && r.page !== pageName);
+    for (const childName of orphanedChildren) {
+      const child = pages.find(p => p.page_name === childName);
+      if (child) { delete child.parent_page; delete child.trigger; }
+    }
+  }
+
+  if (editedMeta.tab_structure) {
+    const ti = editedMeta.tab_structure.indexOf(pageName);
+    if (ti >= 0) {
+      editedMeta.tab_structure.splice(ti, 1);
+      editedMeta.tab_structure.forEach((name, i) => {
+        const pg = pages.find(p => p.page_name === name);
+        if (pg?.structural_features) pg.structural_features.tab_position = i + 1;
+      });
+    }
+  }
+
+  if (reviewState.pages) delete reviewState.pages[pageName];
+
+  testCasesStale = true;
+  renderPages();
+  renderNav();
+  showUI();
+  toast(`已删除页面: ${pageName}`);
+}
+
+function addSiblingRelationship(parentName, childName) {
+  if (!editedMeta.page_relationships) editedMeta.page_relationships = [];
+  const rels = editedMeta.page_relationships;
+
+  const exists = rels.some(r =>
+    (r.parent === parentName && r.page === childName) ||
+    (r.parent === childName && r.page === parentName)
+  );
+  if (exists) { toast('关系已存在'); return; }
+
+  rels.push({ page: childName, parent: parentName, trigger: '' });
+
+  const childPg = editedMeta.pages.find(p => p.page_name === childName);
+  if (childPg) {
+    childPg.parent_page = parentName;
+    childPg.trigger = '';
+    childPg.page_type = 'sub_tab';
+  }
+
+  testCasesStale = true;
+  renderNav();
+  renderPages();
+  toast(`已添加关系: ${parentName} → ${childName}，page_type 已改为 sub_tab，请填写 trigger 描述`);
+}
+
+async function regenerateTestCases() {
+  if (!currentSlug || !editedMeta) return;
+  const pane = $('#pane-tests');
+  pane.innerHTML = '<div class="empty-msg">正在根据当前 metadata 重新生成测试用例...</div>';
+  try {
+    const res = await fetch(`/api/apps/${currentSlug}/preview-testcases`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(editedMeta),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    displayCases = await res.json();
+    testCasesStale = false;
+    $('#cntTests').textContent = displayCases.cases.length;
+  } catch (e) {
+    pane.innerHTML = `<div class="empty-msg" style="color:var(--text-err)">生成失败: ${esc(e.message)}</div>`;
+  }
+}
+
+// ── Issues ──
+
+function buildIssueMap(scope) {
+  const map = {};
+  for (const iss of (reviewData?.issues || [])) {
+    if (iss.scope !== scope) continue;
+    const key = iss.target;
+    (map[key] = map[key] || []).push(iss);
+  }
+  return map;
+}
+
+// ── Save ──
+
+async function doSave() {
+  if (!currentSlug) return;
+  const btn = $('#btnSave');
+  btn.disabled = true;
+  btn.textContent = '保存中...';
+  try {
+    rebuildTabStructureFromPages();
+    const res = await fetch(`/api/apps/${currentSlug}/save`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        metadata: editedMeta,
+        review_state: reviewState,
+        metadata_changed: testCasesStale,
+        delete_screenshots: pendingScreenshotDeletes,
+      }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const delCount = data.screenshots_deleted || 0;
+      pendingScreenshotDeletes = [];
+      if (data.metadata_changed) {
+        testCasesStale = true;
+        await regenerateTestCases();
+        renderTests();
+        toast(`保存成功，测试用例已重新生成 (${data.test_cases_regenerated} 个)${delCount ? `，${delCount} 张截图已标记删除` : ''} — ${data.saved_at}`);
+      } else {
+        toast(`保存成功${delCount ? `，${delCount} 张截图已标记删除` : ''} (metadata 无变化，测试用例未重新生成) — ${data.saved_at}`);
+      }
+      renderNav();
+      renderPages();
+      loadApps();
+    } else {
+      toast('保存失败');
+    }
+  } catch (e) {
+    toast('保存出错: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = '保存审核';
+}
+
+// ── Utils ──
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ── Init ──
+loadApps();
+</script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+# 自动生成的分片配置：仅评估单一 model，配合多终端并行使用
+# 父配置: exp_config.yaml
+# 实验配置示例
+# 用法: python -m evaluator run -c exp_config.yaml
+#
+# 先只跑生成（eval_strategy: manual），之后再单独 eval:
+#   python -m evaluator eval --dir experiments/<timestamp>_<name>/runs --batch
+
+experiment:
+  name: mobileforge-compare
+  description: "多模型多 app 对比实验"
+  output_dir: ./experiments
+
+matrix:
+  # 直接写目录，自动展开为其下所有含图片的子目录
+  apps:
+    - ./input/mobileforge
+  # 也可以单独指定:
+  # apps:
+  #   - ./input/mobileforge/airbnb
+  #   - ./input/mobileforge/discord
+  models:
+    - gpt-5-mini
+    - claude-haiku-4-5
+    - gpt-5
+    - claude-opus-4-6
+    - gemini-2.5-pro
+    - gemini-2.5-flash
+    # - gemini-3-flash-preview
+    # - gemini-3-pro-preview
+
+    # - claude-sonnet-4
+    # - gpt-4o
+    # - gpt-5-mini
+    # - gpt-5.2
+  methods:
+    - agentic
+
+runs_per_cell: 1
+
+limits:
+  max_parallel_runs: 5
+  timeout_per_run_sec: 6000
+
+evaluation:
+  eval_strategy: manual       # manual = 只跑生成，不自动 eval
+  # eval_strategy: per_run    # 每生成一个立刻 eval
+  # eval_strategy: batch      # 全部生成完再统一 eval
+
+  # 可选：覆盖 experiment.yaml 中 testgen.eval_model 的默认值
+  # 不设则使用 experiment.yaml 的配置
+  # visual_judge_model: gemini-2.5-pro
+
+  # selection 只影响 `python -m evaluator eval -c exp_config.yaml`；
+  # matrix 依然控制生成阶段，两者互不干扰。
+  # selection:
+    # 只评估下列模型对应的 run 目录（按 run_id 的 model 段匹配）。
+    # 留空或删掉此行 = 不过滤。
+    # models:
+    #   - claude-opus-4-6
+
+    # eval 时默认跳过的模块（CLI --skip 会覆盖此项）。
+    # 例如：只想跑 navigation_test、暂时不要 visual judge 时：
+    # skip_modules:
+    #   - navigation_visual
+  selection:
+    models: [gpt-5-mini]
+    # models: [claude-opus-4-6]
+    skip_modules: [navigation_visual]

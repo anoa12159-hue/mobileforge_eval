@@ -1,0 +1,52 @@
+# ====================================================================
+# AgenticForge 唯一安装入口（root requirements）
+#
+# 用法：
+#   pip install -r requirements.txt
+#
+# 子目录下还存在历史 requirements*.txt（designforge/、evaluator/、
+# annotator/、annotator/check-tool/、dataset/mobbin-scraper/select-tool/、
+# dataset/mobbin-scraper/review-tool/），它们与本文件存在交集，
+# 已在本文件中合并去重，不必再单独安装。
+#
+# 推荐 Python ≥ 3.10（项目验证使用 3.11）。
+# Node.js 由 nvm 管理（见 env.sh），与本文件无关。
+# Playwright 安装后还需执行：playwright install chromium
+# ====================================================================
+
+# ── designforge: 核心引擎（LLM 调用 + 配置 + CLI 输出）────────────
+httpx>=0.27.0           # Chat API HTTP 客户端 (designforge/llm_client.py)
+litellm>=1.60.0         # provider=litellm 模式时的统一 LLM 接口
+PyYAML>=6.0             # experiment.yaml / models.yaml 加载
+rich>=13.9.0            # 全项目 CLI 彩色输出 / 表格 / 日志
+
+# ── evaluator: 实验评测 + 出图 ──────────────────────────────────
+matplotlib>=3.8.0       # token 分布图 / cost-quality 前沿图
+playwright>=1.40.0      # 评测期浏览器渲染 (testgen/runner.py)
+                        # 安装后必须执行: playwright install chromium
+
+# ── testgen: 路由解析的最优匹配（缺失会降级为 greedy）────────────
+numpy>=1.26.0           # testgen/route_resolver.py 相似度矩阵
+scipy>=1.12.0           # scipy.optimize.linear_sum_assignment
+
+# ── 图像处理 ────────────────────────────────────────────────────
+Pillow>=11.0.0          # scripts/detect_stub_or_error_pages.py 等
+
+# ── Web 工具（fastapi 服务）─────────────────────────────────────
+# 用于：annotator/check-tool/server.py
+#       dataset/mobbin-scraper/select-tool/server.py
+#       dataset/mobbin-scraper/review-tool/server.py
+fastapi>=0.115.0
+uvicorn>=0.32.0
+pydantic>=2.10.0
+
+# ── dataset/mobbin-scraper: 数据采集 ────────────────────────────
+requests>=2.31.0        # download_mobbin.py 抓取 Mobbin
+
+# ====================================================================
+# 可选依赖（仅 scripts/preview_mobileviews.py 用到，主流水线不需要）
+# 如需预览 MobileViews HuggingFace 数据集再装：
+#   pip install 'huggingface_hub>=0.20.0' 'pyarrow>=15.0.0'
+# ====================================================================
+# huggingface_hub>=0.20.0
+# pyarrow>=15.0.0

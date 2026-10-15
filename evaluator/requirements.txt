@@ -1,0 +1,5 @@
+matplotlib>=3.8.0
+playwright>=1.40.0
+PyYAML>=6.0
+rapidfuzz>=3.0.0
+rich>=13.9.0

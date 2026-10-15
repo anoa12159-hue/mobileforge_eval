@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Experiment Monitor</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #232733;
+  --border: #2e3345;
+  --text: #e1e4ed;
+  --text-dim: #8b90a0;
+  --accent: #6c8cff;
+  --green: #3dd68c;
+  --yellow: #f0c040;
+  --red: #f05858;
+  --orange: #e89040;
+  --font: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 20px 24px;
+}
+
+/* Header */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.header h1 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.header h1 .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.header-meta {
+  font-size: 13px;
+  color: var(--text-dim);
+  text-align: right;
+}
+
+/* Stats cards */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.stat-card .label {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+.stat-card .value {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: var(--mono);
+}
+.stat-card .value.green { color: var(--green); }
+.stat-card .value.yellow { color: var(--yellow); }
+.stat-card .value.red { color: var(--red); }
+.stat-card .value.accent { color: var(--accent); }
+
+/* Progress bar */
+.progress-wrap {
+  margin-bottom: 20px;
+}
+.progress-bar-bg {
+  height: 6px;
+  background: var(--surface2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--green));
+  transition: width 0.6s ease;
+}
+.progress-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  text-align: right;
+}
+
+/* Filters */
+.toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.toolbar input[type="text"] {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 12px;
+  font-size: 13px;
+  width: 240px;
+  outline: none;
+}
+.toolbar input[type="text"]:focus {
+  border-color: var(--accent);
+}
+.filter-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.filter-btn:hover { border-color: var(--accent); color: var(--text); }
+.filter-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Table */
+.table-wrap {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+th {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+th:hover { color: var(--text); }
+th .sort-arrow { margin-left: 4px; font-size: 10px; }
+td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover { background: rgba(108, 140, 255, 0.04); }
+tr.generating { background: rgba(240, 192, 64, 0.04); }
+
+/* Status badge */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.badge-generating { background: rgba(240, 192, 64, 0.15); color: var(--yellow); }
+.badge-generated  { background: rgba(61, 214, 140, 0.15); color: var(--green); }
+.badge-evaluated  { background: rgba(61, 214, 140, 0.25); color: var(--green); }
+.badge-gen_failed { background: rgba(240, 88, 88, 0.15); color: var(--red); }
+.badge-eval_failed { background: rgba(232, 144, 64, 0.15); color: var(--orange); }
+.badge-evaluating { background: rgba(108, 140, 255, 0.15); color: var(--accent); }
+.badge-pending    { background: rgba(139, 144, 160, 0.1); color: var(--text-dim); }
+
+/* Iteration bar */
+.iter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.iter-label {
+  display: inline-block;
+  width: 42px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.iter-bar-bg {
+  width: 60px;
+  height: 4px;
+  background: var(--surface2);
+  border-radius: 2px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.iter-bar-fill {
+  height: 100%;
+  background: var(--yellow);
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+.iter-tokens {
+  font-family: var(--mono);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.mono { font-family: var(--mono); font-size: 12px; }
+.dim { color: var(--text-dim); }
+
+/* Footer */
+.footer {
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--text-dim);
+  display: flex;
+  justify-content: space-between;
+}
+
+/* Loading */
+.loading {
+  text-align: center;
+  padding: 60px 0;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  body { padding: 12px; }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .toolbar input[type="text"] { width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span class="dot" id="live-dot"></span> <span id="exp-name">Experiment Monitor</span></h1>
+  <div class="header-meta">
+    <div id="exp-started"></div>
+    <div id="exp-elapsed"></div>
+  </div>
+</div>
+
+<div class="stats" id="stats-grid"></div>
+
+<div class="progress-wrap">
+  <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-fill" style="width:0%"></div></div>
+  <div class="progress-label" id="progress-label"></div>
+</div>
+
+<div class="toolbar">
+  <input type="text" id="search" placeholder="Search run / app / model...">
+  <button class="filter-btn active" data-filter="all">All</button>
+  <button class="filter-btn" data-filter="generating">Running</button>
+  <button class="filter-btn" data-filter="gen_failed">Failed</button>
+  <button class="filter-btn" data-filter="generated">Done</button>
+  <button class="filter-btn" data-filter="pending">Pending</button>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th data-sort="run_id">Run ID <span class="sort-arrow"></span></th>
+        <th data-sort="app">App <span class="sort-arrow"></span></th>
+        <th data-sort="model">Model <span class="sort-arrow"></span></th>
+        <th data-sort="status">Status <span class="sort-arrow"></span></th>
+        <th data-sort="iteration">Iteration <span class="sort-arrow"></span></th>
+        <th data-sort="tokens">Tokens <span class="sort-arrow"></span></th>
+        <th data-sort="elapsed">Time <span class="sort-arrow"></span></th>
+        <th data-sort="cost">Cost <span class="sort-arrow"></span></th>
+        <th data-sort="finished">Finished <span class="sort-arrow"></span></th>
+      </tr>
+    </thead>
+    <tbody id="runs-body">
+      <tr><td colspan="9" class="loading">Loading...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="footer">
+  <span id="footer-count"></span>
+  <span id="footer-refresh"></span>
+</div>
+
+<script>
+const POLL_INTERVAL = 3000;
+let allRuns = [];
+let currentFilter = 'all';
+let currentSort = { key: null, asc: true };
+let searchQuery = '';
+
+// --- Formatters ---
+
+function fmtTokens(n) {
+  if (!n || n === 0) return '—';
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function fmtTime(sec) {
+  if (sec == null || sec === 0) return '—';
+  sec = Math.round(sec);
+  if (sec < 60) return sec + 's';
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m < 60) return m + 'm ' + (s > 0 ? s + 's' : '');
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return h + 'h ' + (rm > 0 ? rm + 'm' : '');
+}
+
+function fmtCost(v) {
+  if (v == null) return '—';
+  return '$' + v.toFixed(4);
+}
+
+function fmtTimestamp(ts) {
+  if (!ts) return '';
+  return new Date(ts * 1000).toLocaleTimeString();
+}
+
+function fmtFinished(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${mm}-${dd} ${hh}:${mi}`;
+}
+
+// --- Status order for sorting ---
+const STATUS_ORDER = {
+  generating: 0, evaluating: 1, pending: 2,
+  gen_failed: 3, eval_failed: 4, generated: 5, evaluated: 6
+};
+
+// --- Render ---
+
+function renderStats(data) {
+  const counts = data.counts || {};
+  const total = data.total_runs || 0;
+  const done = (counts.generated || 0) + (counts.evaluated || 0);
+  const running = (counts.generating || 0) + (counts.evaluating || 0);
+  const failed = (counts.gen_failed || 0) + (counts.eval_failed || 0);
+  const pending = total - done - running - failed;
+
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card"><div class="label">Total</div><div class="value accent">${total}</div></div>
+    <div class="stat-card"><div class="label">Running</div><div class="value yellow">${running}</div></div>
+    <div class="stat-card"><div class="label">Completed</div><div class="value green">${done}</div></div>
+    <div class="stat-card"><div class="label">Failed</div><div class="value red">${failed}</div></div>
+    <div class="stat-card"><div class="label">Pending</div><div class="value" style="color:var(--text-dim)">${pending > 0 ? pending : 0}</div></div>
+  `;
+
+  const pct = total > 0 ? ((done / total) * 100) : 0;
+  document.getElementById('progress-fill').style.width = pct.toFixed(1) + '%';
+  document.getElementById('progress-label').textContent = `${done} / ${total} completed (${pct.toFixed(1)}%)`;
+}
+
+function renderHeader(data) {
+  document.getElementById('exp-name').textContent = data.experiment_id || 'Experiment';
+  document.getElementById('exp-started').textContent = data.started_at ? 'Started: ' + data.started_at : '';
+  document.getElementById('exp-elapsed').textContent = data.elapsed_sec ? 'Elapsed: ' + fmtTime(data.elapsed_sec) : '';
+}
+
+function getFilteredRuns() {
+  let runs = allRuns;
+  if (currentFilter !== 'all') {
+    if (currentFilter === 'generated') {
+      runs = runs.filter(r => r.status === 'generated' || r.status === 'evaluated');
+    } else {
+      runs = runs.filter(r => r.status === currentFilter);
+    }
+  }
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    runs = runs.filter(r =>
+      r.run_id.toLowerCase().includes(q) ||
+      r.app.toLowerCase().includes(q) ||
+      r.model.toLowerCase().includes(q)
+    );
+  }
+  if (currentSort.key) {
+    const key = currentSort.key;
+    const dir = currentSort.asc ? 1 : -1;
+    runs = [...runs].sort((a, b) => {
+      let va, vb;
+      if (key === 'status') {
+        va = STATUS_ORDER[a.status] ?? 99;
+        vb = STATUS_ORDER[b.status] ?? 99;
+      } else if (key === 'tokens') {
+        va = (a.tokens_in || 0) + (a.tokens_out || 0);
+        vb = (b.tokens_in || 0) + (b.tokens_out || 0);
+      } else if (key === 'elapsed') {
+        va = a.elapsed_sec || 0;
+        vb = b.elapsed_sec || 0;
+      } else if (key === 'cost') {
+        va = a.cost_usd || 0;
+        vb = b.cost_usd || 0;
+      } else if (key === 'finished') {
+        va = a.finished_at || '';
+        vb = b.finished_at || '';
+        return dir * va.localeCompare(vb);
+      } else if (key === 'iteration') {
+        va = a.iteration ? parseInt(a.iteration.split('/')[0]) : -1;
+        vb = b.iteration ? parseInt(b.iteration.split('/')[0]) : -1;
+      } else {
+        va = (a[key] || '').toString();
+        vb = (b[key] || '').toString();
+        return dir * va.localeCompare(vb);
+      }
+      return dir * (va - vb);
+    });
+  }
+  return runs;
+}
+
+function renderTable() {
+  const runs = getFilteredRuns();
+  const tbody = document.getElementById('runs-body');
+
+  if (runs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" class="loading">No matching runs</td></tr>';
+    document.getElementById('footer-count').textContent = '0 runs shown';
+    return;
+  }
+
+  let html = '';
+  for (const r of runs) {
+    const isRunning = r.status === 'generating' || r.status === 'evaluating';
+    const rowClass = isRunning ? ' class="generating"' : '';
+
+    let iterCell = '<span class="dim">—</span>';
+    if (r.iteration) {
+      const [cur, max] = r.iteration.split('/').map(Number);
+      const pct = max > 0 ? ((cur / max) * 100).toFixed(0) : 0;
+      const iterTokens = r.iter_input_tokens ? `<span class="dim iter-tokens" title="Last iter input tokens">${fmtTokens(r.iter_input_tokens)}</span>` : '';
+      iterCell = `<div class="iter-bar">
+        <span class="mono iter-label">${r.iteration}</span>
+        <div class="iter-bar-bg"><div class="iter-bar-fill" style="width:${pct}%"></div></div>
+        ${iterTokens}
+      </div>`;
+    }
+
+    const tokensCell = (r.tokens_in || r.tokens_out)
+      ? `<span class="mono">${fmtTokens(r.tokens_in)} / ${fmtTokens(r.tokens_out)}</span>`
+      : '<span class="dim">—</span>';
+
+    html += `<tr${rowClass}>
+      <td class="mono">${r.run_id}</td>
+      <td>${r.app}</td>
+      <td>${r.model}</td>
+      <td><span class="badge badge-${r.status}">${r.status}</span></td>
+      <td>${iterCell}</td>
+      <td>${tokensCell}</td>
+      <td class="mono">${fmtTime(r.elapsed_sec)}</td>
+      <td class="mono">${fmtCost(r.cost_usd)}</td>
+      <td class="mono dim">${fmtFinished(r.finished_at)}</td>
+    </tr>`;
+  }
+  tbody.innerHTML = html;
+  document.getElementById('footer-count').textContent = `${runs.length} runs shown`;
+}
+
+// --- Data fetching ---
+
+async function fetchData() {
+  try {
+    const resp = await fetch('/api/status');
+    if (!resp.ok) return;
+    const data = await resp.json();
+
+    allRuns = data.runs || [];
+    renderHeader(data);
+    renderStats(data);
+    renderTable();
+
+    const hasRunning = allRuns.some(r => r.status === 'generating' || r.status === 'evaluating');
+    document.getElementById('live-dot').style.background = hasRunning ? 'var(--yellow)' : 'var(--green)';
+    document.getElementById('footer-refresh').textContent = 'Last update: ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('footer-refresh').textContent = 'Fetch failed: ' + e.message;
+  }
+}
+
+// --- Events ---
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.filter;
+    renderTable();
+  });
+});
+
+document.getElementById('search').addEventListener('input', e => {
+  searchQuery = e.target.value;
+  renderTable();
+});
+
+document.querySelectorAll('th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (currentSort.key === key) {
+      currentSort.asc = !currentSort.asc;
+    } else {
+      currentSort = { key, asc: true };
+    }
+    document.querySelectorAll('th .sort-arrow').forEach(s => s.textContent = '');
+    th.querySelector('.sort-arrow').textContent = currentSort.asc ? ' ▲' : ' ▼';
+    renderTable();
+  });
+});
+
+// --- Init ---
+fetchData();
+setInterval(fetchData, POLL_INTERVAL);
+</script>
+</body>
+</html>

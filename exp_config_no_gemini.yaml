@@ -1,0 +1,27 @@
+# 临时配置：只跑非 Gemini 模型的失败任务
+# 用法: source env.sh && python -m evaluator run -c exp_config_no_gemini.yaml --resume
+
+experiment:
+  name: mobileforge-compare
+  description: "多模型多 app 对比实验"
+  output_dir: ./experiments
+
+matrix:
+  apps:
+    - ./input/mobileforge
+  models:
+    - gpt-5-mini
+    - claude-haiku-4-5
+    - claude-opus-4-6
+    - gpt-5
+  methods:
+    - agentic
+
+runs_per_cell: 1
+
+limits:
+  max_parallel_runs: 5
+  timeout_per_run_sec: 6000
+
+evaluation:
+  eval_strategy: manual
